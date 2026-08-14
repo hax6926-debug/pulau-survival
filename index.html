@@ -41,11 +41,11 @@
 <body>
     <canvas id="gameCanvas" width="800" height="400"></canvas>
     <button id="restartButton">Main Lagi</button>
+    
     <script>
-        // =====================
-        // GAME KITA MULAI DI SINI
-        // =====================
-
+        // ==========================================
+        // INISIALISASI CANVAS & VARIABEL DUNIA
+        // ==========================================
         const canvas = document.getElementById('gameCanvas');
         const ctx = canvas.getContext('2d');
         const restartButton = document.getElementById('restartButton');
@@ -58,6 +58,7 @@
         const pulauPoints = [];
         const jumlahSegmen = 16;
         const radiusDasar = 400;
+        
         for (let i = 0; i < jumlahSegmen; i++) {
             const sudut = (i / jumlahSegmen) * Math.PI * 2;
             const variasi = Math.sin(i * 1.5) * 30 + Math.cos(i * 2) * 20;
@@ -67,7 +68,11 @@
             pulauPoints.push({ x, y });
         }
 
-        // Fungsi cek apakah titik berada di dalam pulau
+        // ==========================================
+        // FUNGSI UTILITY (ALAT BANTU)
+        // ==========================================
+        
+        // Cek apakah titik berada di dalam pulau
         function isInsidePulau(x, y) {
             let inside = false;
             for (let i = 0, j = pulauPoints.length - 1; i < pulauPoints.length; j = i++) {
@@ -75,14 +80,13 @@
                 const yi = pulauPoints[i].y;
                 const xj = pulauPoints[j].x;
                 const yj = pulauPoints[j].y;
-                const intersect = ((yi > y) !== (yj > y)) &&
-                    (x < (xj - xi) * (y - yi) / (yj - yi) + xi);
+                const intersect = ((yi > y) !== (yj > y)) && (x < (xj - xi) * (y - yi) / (yj - yi) + xi);
                 if (intersect) inside = !inside;
             }
             return inside;
         }
 
-        // Fungsi mendapatkan posisi acak di dalam pulau
+        // Dapatkan posisi acak di dalam pulau
         function randomPosisiDalamPulau() {
             let x, y;
             do {
@@ -91,268 +95,666 @@
             } while (!isInsidePulau(x, y));
             return { x, y };
         }
-
-        // Posisi pemain di tengah dunia
-        let playerX, playerY;
-        const playerSize = 20;
-
-        // Kamera
-        let cameraX = 0;
-        let cameraY = 0;
-
-        // Status tombol yang ditekan
-        const keys = {};
-
-        // Waktu untuk delta time
-        let lastFrameTime = performance.now();
-        let lastUpdateTime = performance.now();
-        let lastHungerTime = performance.now();
-        const kecepatanPemain = 200; // piksel per detik
-
-        // Inventory dan status
-        let jumlahKayu, jumlahBatu, jumlahBerry, jumlahDagingMentah, jumlahDagingMasak, jumlahKulit;
-        let punyaKapak, pesan;
-
-        // XP dan Level
-        let xp, level;
-        const xpPerLevel = 50;
-
-        // Status survival
-        let hunger, kesehatan, gameOver;
-
-        // Waktu
-        let jam, malam;
-
-        // Resource arrays
-        const pohon = [];
-        const batu = [];
-        const semak = [];
-        const musuh = [];
-        const kelinci = [];
-        const campfires = [];
-        const respawnList = [];
-
-        const RESPAWN_DELAY_POHON = 120000;
-        const RESPAWN_DELAY_BATU = 120000;
-        const RESPAWN_DELAY_SEMAK = 90000;
-        const RESPAWN_DELAY_KELINCI = 90000;
-
-        const SAVE_KEY = 'pulauSurvivalSave';
-
-        // =====================
-        // INISIALISASI GAME
-        // =====================
-
-        function generateResources() {
-            // Kosongkan semua array
-            pohon.length = 0;
-            batu.length = 0;
-            semak.length = 0;
-            musuh.length = 0;
-            kelinci.length = 0;
-            campfires.length = 0;
-            respawnList.length = 0;
-
-            // Jumlah awal acak
-            const jumlahPohonAwal = Math.floor(Math.random() * 6) + 12;
-            const jumlahBatuAwal = Math.floor(Math.random() * 5) + 8;
-            const jumlahSemakAwal = Math.floor(Math.random() * 6) + 10;
-
-            for (let i = 0; i < jumlahPohonAwal; i++) {
-                const pos = randomPosisiDalamPulau();
-                pohon.push({ x: pos.x, y: pos.y });
+        
+        // Cek apakah pemain menabrak objek (pohon/batu/semak/campfire)
+        function isBlocked(x, y) {
+            const obstacles = [...gameState.resources, ...gameState.campfires];
+            for (let obs of obstacles) {
+                const dx = x - obs.x;
+                const dy = y - obs.y;
+                const jarak = Math.sqrt(dx * dx + dy * dy);
+                if (jarak < 15) {
+                    return true; // Terlalu dekat, dilarang lewat
+                }
             }
-            for (let i = 0; i < jumlahBatuAwal; i++) {
-                const pos = randomPosisiDalamPulau();
-                batu.push({ x: pos.x, y: pos.y });
-            }
-            for (let i = 0; i < jumlahSemakAwal; i++) {
-                const pos = randomPosisiDalamPulau();
-                semak.push({ x: pos.x, y: pos.y });
-            }
+            return false;
+        }
 
-            // Musuh serigala
-            for (let i = 0; i < 4; i++) {
-                const pos = randomPosisiDalamPulau();
-                musuh.push({ x: pos.x, y: pos.y, hp: 20, cooldown: 0 });
-            }
+        // ==========================================
+        // CLASS DEFINITIONS (CETAKAN OBJEK)
+        // ==========================================
 
-            // Kelinci
-            for (let i = 0; i < 5; i++) {
-                const pos = randomPosisiDalamPulau();
-                kelinci.push({
-                    x: pos.x,
-                    y: pos.y,
-                    arahX: Math.random() * 2 - 1,
-                    arahY: Math.random() * 2 - 1,
-                    timer: Math.floor(Math.random() * 50)
-                });
+        class Entity {
+            constructor(x, y) {
+                this.x = x;
+                this.y = y;
             }
         }
 
-        function resetStateVariables() {
-            playerX = worldWidth / 2;
-            playerY = worldHeight / 2;
+        class Player extends Entity {
+            constructor() {
+                super(worldWidth / 2, worldHeight / 2);
+                this.size = 20;
+                this.kecepatan = 200;
+                this.lastDirX = 0;
+                this.lastDirY = 1;
+                this.keys = {};
+                this.hurtUntil = 0; // Timestamp sampai kapan efek merah
+            }
 
-            jumlahKayu = 0;
-            jumlahBatu = 0;
-            jumlahBerry = 0;
-            jumlahDagingMentah = 0;
-            jumlahDagingMasak = 0;
-            jumlahKulit = 0;
-            punyaKapak = false;
-            pesan = 'Kamu hidup kembali!';
+            update(deltaTime) {
+                let dx = 0;
+                let dy = 0;
 
-            xp = 0;
-            level = 1;
+                if (this.keys['w'] || this.keys['ArrowUp']) dy -= 1;
+                if (this.keys['s'] || this.keys['ArrowDown']) dy += 1;
+                if (this.keys['a'] || this.keys['ArrowLeft']) dx -= 1;
+                if (this.keys['d'] || this.keys['ArrowRight']) dx += 1;
 
-            hunger = 100;
-            kesehatan = 100;
-            gameOver = false;
+                if (dx !== 0 || dy !== 0) {
+                    const length = Math.sqrt(dx * dx + dy * dy);
+                    dx /= length;
+                    dy /= length;
 
-            jam = 8;
-            malam = false;
-        }
+                    this.lastDirX = dx;
+                    this.lastDirY = dy;
 
-        function restartGame() {
-            resetStateVariables();
-            generateResources();
+                    const newX = this.x + dx * this.kecepatan * deltaTime;
+                    const newY = this.y + dy * this.kecepatan * deltaTime;
 
-            lastUpdateTime = performance.now();
-            lastHungerTime = performance.now();
-            lastFrameTime = performance.now();
+                    // Coba gerakkan sumbu X dulu
+                    if (isInsidePulau(newX, this.y) && !isBlocked(newX, this.y)) {
+                        this.x = newX;
+                    }
 
-            restartButton.style.display = 'none';
-        }
+                    // Lalu coba sumbu Y
+                    if (isInsidePulau(this.x, newY) && !isBlocked(this.x, newY)) {
+                        this.y = newY;
+                    }
+                }
+            }
 
-        // =====================
-        // SAVE & LOAD
-        // =====================
+            draw() {
+                const x = this.x;
+                const y = this.y;
 
-        function simpanGame() {
-            try {
-                const data = {
-                    playerX,
-                    playerY,
-                    jumlahKayu,
-                    jumlahBatu,
-                    jumlahBerry,
-                    jumlahDagingMentah,
-                    jumlahDagingMasak,
-                    jumlahKulit,
-                    punyaKapak,
-                    pesan,
-                    xp,
-                    level,
-                    hunger,
-                    kesehatan,
-                    gameOver,
-                    jam,
-                    malam,
-                    pohon: pohon.map(p => ({ x: p.x, y: p.y })),
-                    batu: batu.map(b => ({ x: b.x, y: b.y })),
-                    semak: semak.map(s => ({ x: s.x, y: s.y })),
-                    musuh: musuh.map(m => ({ x: m.x, y: m.y, hp: m.hp, cooldown: m.cooldown })),
-                    kelinci: kelinci.map(k => ({
-                        x: k.x,
-                        y: k.y,
-                        arahX: k.arahX,
-                        arahY: k.arahY,
-                        timer: k.timer
-                    })),
-                    campfires: campfires.map(c => ({ x: c.x, y: c.y })),
-                    respawnList: respawnList.map(r => ({ tipe: r.tipe, waktu: r.waktu }))
-                };
+                // Outline
+                ctx.strokeStyle = '#111';
+                ctx.lineWidth = 1.5;
 
-                localStorage.setItem(SAVE_KEY, JSON.stringify(data));
-                pesan = '💾 Game disimpan!';
-                render();
-            } catch (e) {
-                pesan = '❌ Gagal menyimpan game!';
-                render();
+                const hurt = performance.now() < this.hurtUntil;
+                const warnaBadan = hurt ? '#E74C3C' : '#4A90D9';
+                const warnaKulit = hurt ? '#FF6B6B' : '#FFD1A6';
+
+                // Badan (oval)
+                ctx.fillStyle = warnaBadan;
+                ctx.beginPath();
+                ctx.ellipse(x, y, 7, 8, 0, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.stroke();
+
+                // Kepala
+                ctx.fillStyle = warnaKulit;
+                ctx.beginPath();
+                ctx.arc(x, y - 12, 5, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.stroke();
+
+                // Tangan kiri
+                ctx.fillStyle = warnaKulit;
+                ctx.beginPath();
+                ctx.arc(x - 8, y - 2, 3, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.stroke();
+
+                // Tangan kanan
+                ctx.beginPath();
+                ctx.arc(x + 8, y - 2, 3, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.stroke();
+                
+                // Mata
+const mataX = x + this.lastDirX * 2;
+const mataY = y - 12 + this.lastDirY * 2;
+ctx.fillStyle = '#111';
+ctx.beginPath();
+ctx.arc(mataX, mataY, 1.2, 0, Math.PI * 2);
+ctx.fill();
+
+// Mulut
+ctx.fillRect(x - 1.5, y - 9, 3, 1);
             }
         }
 
-        function muatGame() {
-            try {
-                const json = localStorage.getItem(SAVE_KEY);
-                if (!json) {
-                    pesan = '❌ Tidak ada data save!';
-                    render();
-                    return;
+        class Resource extends Entity {
+    constructor(x, y, tipe) {
+        super(x, y);
+        this.tipe = tipe; // 'pohon', 'batu', 'semak'
+    }
+    
+    draw() {
+        // Outline hitam
+        ctx.strokeStyle = '#111';
+        ctx.lineWidth = 1.5;
+        
+        if (this.tipe === 'pohon') {
+            // Batang pohon
+            ctx.fillStyle = '#8B4513';
+            ctx.fillRect(this.x - 4, this.y - 10, 8, 20);
+            ctx.strokeRect(this.x - 4, this.y - 10, 8, 20);
+            
+            // Daun pohon
+            ctx.fillStyle = '#27AE60';
+            ctx.beginPath();
+            ctx.arc(this.x, this.y - 15, 12, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.stroke();
+        } else if (this.tipe === 'batu') {
+            // Batu besar
+            ctx.fillStyle = '#7F8C8D';
+            ctx.beginPath();
+            ctx.arc(this.x, this.y, 10, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.stroke();
+            
+            // Highlight batu
+            ctx.fillStyle = '#95A5A6';
+            ctx.beginPath();
+            ctx.arc(this.x - 3, this.y - 3, 4, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.stroke();
+        } else if (this.tipe === 'semak') {
+            // Daun semak
+            ctx.fillStyle = '#2ECC71';
+            ctx.beginPath();
+            ctx.arc(this.x, this.y, 12, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.stroke();
+            
+            // Berry-berry merah
+            ctx.fillStyle = '#FF0000';
+            const berries = [
+                { x: this.x - 4, y: this.y - 4 },
+                { x: this.x + 4, y: this.y - 3 },
+                { x: this.x, y: this.y + 5 }
+            ];
+            berries.forEach(b => {
+                ctx.beginPath();
+                ctx.arc(b.x, b.y, 3, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.stroke();
+            });
+        }
+    }
+}
+
+        class Enemy extends Entity {
+            constructor(x, y) {
+                super(x, y);
+                this.hp = 20;
+                this.cooldown = 0;
+                this.speed = 1.5;
+                this.targetType = null;
+            }
+
+            update(gameState) {
+                if (gameState.gameOver) return;
+
+                const oldX = this.x;
+                const oldY = this.y;
+                const jarakKePemain = Math.sqrt((gameState.player.x - this.x) ** 2 + (gameState.player.y - this.y) ** 2);
+
+                // Cari kelinci terdekat
+                let kelinciTerdekat = null;
+                let jarakKeKelinci = Infinity;
+                
+                for (let i = 0; i < gameState.kelincis.length; i++) {
+                    const k = gameState.kelincis[i];
+                    const jarak = Math.sqrt((this.x - k.x) ** 2 + (this.y - k.y) ** 2);
+                    if (jarak < jarakKeKelinci) {
+                        jarakKeKelinci = jarak;
+                        kelinciTerdekat = i;
+                    }
                 }
 
-                const data = JSON.parse(json);
+                let targetX = null;
+                let targetY = null;
+                let speed = this.speed;
 
-                // Reset dulu state & resource agar bersih
-                restartGame();
+                if (gameState.malam && jarakKePemain < 250) {
+                    targetX = gameState.player.x;
+                    targetY = gameState.player.y;
+                } else if (kelinciTerdekat !== null && jarakKeKelinci < 200) {
+                    const target = gameState.kelincis[kelinciTerdekat];
+                    targetX = target.x;
+                    targetY = target.y;
+                    speed = 1.8;
+                } else {
+                    if (!gameState.malam && jarakKePemain < 120) {
+                        const arahX = (this.x - gameState.player.x) / jarakKePemain;
+                        const arahY = (this.y - gameState.player.y) / jarakKePemain;
+                        
+                        const newX = this.x + arahX * 0.5;
+                        const newY = this.y + arahY * 0.5;
+                        
+                        if (isInsidePulau(newX, this.y) && !isBlocked(newX, this.y)) {
+                            this.x = newX;
+                        }
+                        if (isInsidePulau(this.x, newY) && !isBlocked(this.x, newY)) {
+                            this.y = newY;
+                        }
+                    }
+                }
 
-                // Terapkan data tersimpan
-                playerX = data.playerX;
-                playerY = data.playerY;
-                jumlahKayu = data.jumlahKayu;
-                jumlahBatu = data.jumlahBatu;
-                jumlahBerry = data.jumlahBerry;
-                jumlahDagingMentah = data.jumlahDagingMentah;
-                jumlahDagingMasak = data.jumlahDagingMasak;
-                jumlahKulit = data.jumlahKulit;
-                punyaKapak = data.punyaKapak;
-                pesan = '📂 Game dimuat!';
-                xp = data.xp;
-                level = data.level;
-                hunger = data.hunger;
-                kesehatan = data.kesehatan;
-                gameOver = data.gameOver;
-                jam = data.jam;
-                malam = data.malam;
+                if (targetX !== null && targetY !== null) {
+                    const jarakKeTarget = Math.sqrt((targetX - this.x) ** 2 + (targetY - this.y) ** 2);
+                    if (jarakKeTarget > 1) {
+                        const arahX = (targetX - this.x) / jarakKeTarget;
+                        const arahY = (targetY - this.y) / jarakKeTarget;
 
-                // Isi ulang array
-                pohon.length = 0;
-                data.pohon.forEach(p => pohon.push({ x: p.x, y: p.y }));
+                        const newX = this.x + arahX * speed;
+                        const newY = this.y + arahY * speed;
 
-                batu.length = 0;
-                data.batu.forEach(b => batu.push({ x: b.x, y: b.y }));
+                        // Coba sumbu X dulu
+                        if (isInsidePulau(newX, this.y) && !isBlocked(newX, this.y)) {
+                            this.x = newX;
+                        }
 
-                semak.length = 0;
-                data.semak.forEach(s => semak.push({ x: s.x, y: s.y }));
+                        // Lalu sumbu Y
+                        if (isInsidePulau(this.x, newY) && !isBlocked(this.x, newY)) {
+                            this.y = newY;
+                        }
+                    }
+                }
 
-                musuh.length = 0;
-                data.musuh.forEach(m => musuh.push({ x: m.x, y: m.y, hp: m.hp, cooldown: m.cooldown }));
+                if (!isInsidePulau(this.x, this.y)) {
+                    this.x = oldX;
+                    this.y = oldY;
+                }
 
-                kelinci.length = 0;
-                data.kelinci.forEach(k => kelinci.push({
-                    x: k.x,
-                    y: k.y,
-                    arahX: k.arahX,
-                    arahY: k.arahY,
-                    timer: k.timer
-                }));
+                if (kelinciTerdekat !== null && jarakKeKelinci < 15) {
+                    gameState.kelincis.splice(kelinciTerdekat, 1);
+                    gameState.jadwalkanRespawn('kelinci');
+                    this.hp = Math.min(this.hp + 10, 30);
+                    gameState.pesan = '🐺 Serigala memakan kelinci!';
+                }
 
-                campfires.length = 0;
-                data.campfires.forEach(c => campfires.push({ x: c.x, y: c.y }));
+                const jarakSekarang = Math.sqrt((gameState.player.x - this.x) ** 2 + (gameState.player.y - this.y) ** 2);
 
-                respawnList.length = 0;
-                data.respawnList.forEach(r => respawnList.push({ tipe: r.tipe, waktu: r.waktu }));
+                if (gameState.malam && jarakSekarang < 25 && this.cooldown <= 0) {
+                    gameState.kesehatan -= 5;
+                    if (gameState.kesehatan < 0) gameState.kesehatan = 0;
+                    gameState.pesan = '🐺 Kamu digigit serigala!';
+                    this.cooldown = 10;
+                    
+                    // Efek terluka dan layar bergetar
+                    gameState.screenShakeUntil = performance.now() + 150;
+                    if (gameState.player) {
+                        gameState.player.hurtUntil = performance.now() + 200;
+                    }
+                    
+                    if (gameState.kesehatan === 0) {
+                        gameState.gameOver = true;
+                        gameState.pesan = 'Kamu mati diserang serigala...';
+                    }
+                }
 
-                // Reset timing
-                lastUpdateTime = performance.now();
-                lastHungerTime = performance.now();
-                lastFrameTime = performance.now();
+                if (this.cooldown > 0) {
+                    this.cooldown--;
+                }
+            }
 
-                restartButton.style.display = 'none';
-                render();
-            } catch (e) {
-                pesan = '❌ Data save korup!';
-                render();
+            draw() {
+                const x = this.x;
+                const y = this.y;
+
+                // Outline hitam
+                ctx.strokeStyle = '#111';
+                ctx.lineWidth = 1.5;
+
+                // Badan
+                ctx.fillStyle = '#7F8C8D';
+                ctx.beginPath();
+                ctx.arc(x, y, 12, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.stroke();
+
+                // Kepala
+                ctx.fillStyle = '#95A5A6';
+                ctx.beginPath();
+                ctx.arc(x + 8, y - 5, 7, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.stroke();
+
+                // Mata
+                ctx.fillStyle = '#FF0000';
+                ctx.beginPath();
+                ctx.arc(x + 9, y - 7, 2, 0, Math.PI * 2);
+                ctx.fill();
+
+                // Ekor
+                ctx.fillStyle = '#7F8C8D';
+                ctx.beginPath();
+                ctx.arc(x - 12, y + 5, 5, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.stroke();
             }
         }
 
-        // Inisialisasi pertama
-        restartGame();
+        class Kelinci extends Entity {
+            constructor(x, y) {
+                super(x, y);
+                this.arahX = Math.random() * 2 - 1;
+                this.arahY = Math.random() * 2 - 1;
+                this.timer = Math.floor(Math.random() * 50);
+            }
 
-        // =====================
-        // FUNGSI GAMBAR
-        // =====================
+            update(gameState) {
+                if (gameState.gameOver) return;
+
+                const oldX = this.x;
+                const oldY = this.y;
+
+                this.timer++;
+                if (this.timer > 50) {
+                    const sudut = Math.random() * Math.PI * 2;
+                    this.arahX = Math.cos(sudut);
+                    this.arahY = Math.sin(sudut);
+                    this.timer = 0;
+                }
+
+                const speed = 0.8;
+                this.x += this.arahX * speed;
+                this.y += this.arahY * speed;
+
+                if (!isInsidePulau(this.x, this.y)) {
+                    this.x = oldX;
+                    this.y = oldY;
+                    const sudut = Math.random() * Math.PI * 2;
+                    this.arahX = Math.cos(sudut);
+                    this.arahY = Math.sin(sudut);
+                }
+            }
+
+            draw() {
+                const x = this.x;
+                const y = this.y;
+
+                // Outline hitam
+                ctx.strokeStyle = '#111';
+                ctx.lineWidth = 1.5;
+
+                // Badan
+                ctx.fillStyle = '#D2B48C';
+                ctx.beginPath();
+                ctx.arc(x, y, 8, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.stroke();
+
+                // Kepala
+                ctx.fillStyle = '#DEB887';
+                ctx.beginPath();
+                ctx.arc(x + 6, y - 4, 5, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.stroke();
+
+                // Telinga
+                ctx.fillStyle = '#A0522D';
+                ctx.fillRect(x + 3, y - 12, 2, 6);
+                ctx.fillRect(x + 6, y - 12, 2, 6);
+
+                // Ekor
+                ctx.fillStyle = '#FFFFFF';
+                ctx.beginPath();
+                ctx.arc(x - 8, y + 2, 3, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.stroke();
+            }
+        }
+
+        class Campfire extends Entity {
+            draw() {
+                ctx.fillStyle = '#8B4513';
+                ctx.fillRect(this.x - 8, this.y, 16, 4);
+                ctx.fillRect(this.x - 4, this.y - 6, 16, 4);
+                ctx.fillStyle = '#FF4500';
+                ctx.beginPath();
+                ctx.arc(this.x, this.y - 4, 6, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.fillStyle = '#FFD700';
+                ctx.beginPath();
+                ctx.arc(this.x, this.y - 5, 3, 0, Math.PI * 2);
+                ctx.fill();
+            }
+        }
+
+        // ==========================================
+        // GAME STATE (Pusat Data Game)
+        // ==========================================
+
+        const gameState = {
+            player: null,
+            resources: [],
+            enemies: [],
+            kelincis: [],
+            campfires: [],
+            respawnList: [],
+
+            jumlahKayu: 0,
+            jumlahBatu: 0,
+            jumlahBerry: 0,
+            jumlahDagingMentah: 0,
+            jumlahDagingMasak: 0,
+            jumlahKulit: 0,
+            punyaKapak: false,
+            pesan: '',
+
+            xp: 0,
+            level: 1,
+            xpPerLevel: 50,
+
+            hunger: 100,
+            kesehatan: 100,
+            gameOver: false,
+
+            jam: 8,
+            malam: false,
+
+            lastUpdateTime: performance.now(),
+            lastHungerTime: performance.now(),
+            lastFrameTime: performance.now(),
+
+            keys: {},
+            showMenu: false,
+
+            screenShakeUntil: 0,
+            screenShakeIntensity: 5,
+
+            RESPAWN_DELAY: {
+                pohon: 120000,
+                batu: 120000,
+                semak: 90000,
+                kelinci: 90000
+            },
+
+            jadwalkanRespawn(tipe) {
+                this.respawnList.push({
+                    tipe: tipe,
+                    waktu: Date.now() + this.RESPAWN_DELAY[tipe]
+                });
+            },
+
+            cekRespawn() {
+                const sekarang = Date.now();
+                for (let i = this.respawnList.length - 1; i >= 0; i--) {
+                    const item = this.respawnList[i];
+                    if (sekarang >= item.waktu) {
+                        const pos = randomPosisiDalamPulau();
+                        if (item.tipe === 'pohon') {
+                            this.resources.push(new Resource(pos.x, pos.y, 'pohon'));
+                        } else if (item.tipe === 'batu') {
+                            this.resources.push(new Resource(pos.x, pos.y, 'batu'));
+                        } else if (item.tipe === 'semak') {
+                            this.resources.push(new Resource(pos.x, pos.y, 'semak'));
+                        } else if (item.tipe === 'kelinci') {
+                            this.kelincis.push(new Kelinci(pos.x, pos.y));
+                        }
+                        this.respawnList.splice(i, 1);
+                    }
+                }
+            },
+
+            simpanGame() {
+                try {
+                    const data = {
+                        playerX: this.player.x,
+                        playerY: this.player.y,
+                        jumlahKayu: this.jumlahKayu,
+                        jumlahBatu: this.jumlahBatu,
+                        jumlahBerry: this.jumlahBerry,
+                        jumlahDagingMentah: this.jumlahDagingMentah,
+                        jumlahDagingMasak: this.jumlahDagingMasak,
+                        jumlahKulit: this.jumlahKulit,
+                        punyaKapak: this.punyaKapak,
+                        pesan: this.pesan,
+                        xp: this.xp,
+                        level: this.level,
+                        hunger: this.hunger,
+                        kesehatan: this.kesehatan,
+                        gameOver: this.gameOver,
+                        jam: this.jam,
+                        malam: this.malam,
+                        resources: this.resources.map(r => ({ x: r.x, y: r.y, tipe: r.tipe })),
+                        enemies: this.enemies.map(e => ({ x: e.x, y: e.y, hp: e.hp, cooldown: e.cooldown })),
+                        kelincis: this.kelincis.map(k => ({ x: k.x, y: k.y, arahX: k.arahX, arahY: k.arahY, timer: k.timer })),
+                        campfires: this.campfires.map(c => ({ x: c.x, y: c.y })),
+                        respawnList: this.respawnList.map(r => ({ tipe: r.tipe, waktu: r.waktu }))
+                    };
+                    localStorage.setItem('pulauSurvivalSave', JSON.stringify(data));
+                    this.pesan = '💾 Game disimpan!';
+                } catch (e) {
+                    this.pesan = '❌ Gagal menyimpan game!';
+                }
+            },
+
+            muatGame() {
+                try {
+                    const json = localStorage.getItem('pulauSurvivalSave');
+                    if (!json) {
+                        this.pesan = '❌ Tidak ada data save!';
+                        return;
+                    }
+                    const data = JSON.parse(json);
+
+                    // Reset state dulu
+                    this.restartGame();
+
+                    // Terapkan data
+                    this.player.x = data.playerX;
+                    this.player.y = data.playerY;
+                    this.player.keys = this.keys;
+                    this.jumlahKayu = data.jumlahKayu;
+                    this.jumlahBatu = data.jumlahBatu;
+                    this.jumlahBerry = data.jumlahBerry;
+                    this.jumlahDagingMentah = data.jumlahDagingMentah;
+                    this.jumlahDagingMasak = data.jumlahDagingMasak;
+                    this.jumlahKulit = data.jumlahKulit;
+                    this.punyaKapak = data.punyaKapak;
+                    this.pesan = '📂 Game dimuat!';
+                    this.xp = data.xp;
+                    this.level = data.level;
+                    this.hunger = data.hunger;
+                    this.kesehatan = data.kesehatan;
+                    this.gameOver = data.gameOver;
+                    this.jam = data.jam;
+                    this.malam = data.malam;
+
+                    // Isi ulang array
+                    this.resources = data.resources.map(r => new Resource(r.x, r.y, r.tipe));
+                    this.enemies = data.enemies.map(e => {
+                        const enemy = new Enemy(e.x, e.y);
+                        enemy.hp = e.hp;
+                        enemy.cooldown = e.cooldown;
+                        return enemy;
+                    });
+                    this.kelincis = data.kelincis.map(k => {
+                        const kelinci = new Kelinci(k.x, k.y);
+                        kelinci.arahX = k.arahX;
+                        kelinci.arahY = k.arahY;
+                        kelinci.timer = k.timer;
+                        return kelinci;
+                    });
+                    this.campfires = data.campfires.map(c => new Campfire(c.x, c.y));
+                    this.respawnList = data.respawnList;
+
+                    this.lastUpdateTime = performance.now();
+                    this.lastHungerTime = performance.now();
+                    this.lastFrameTime = performance.now();
+
+                    restartButton.style.display = 'none';
+                } catch (e) {
+                    this.pesan = '❌ Data save korup!';
+                }
+            },
+
+            restartGame() {
+                // Reset player
+                this.player = new Player();
+                this.player.keys = this.keys;
+
+                this.resources = [];
+                this.enemies = [];
+                this.kelincis = [];
+                this.campfires = [];
+                this.respawnList = [];
+
+                // Jumlah awal acak
+                const jumlahPohonAwal = Math.floor(Math.random() * 6) + 12;
+                const jumlahBatuAwal = Math.floor(Math.random() * 5) + 8;
+                const jumlahSemakAwal = Math.floor(Math.random() * 6) + 10;
+
+                for (let i = 0; i < jumlahPohonAwal; i++) {
+                    const pos = randomPosisiDalamPulau();
+                    this.resources.push(new Resource(pos.x, pos.y, 'pohon'));
+                }
+                for (let i = 0; i < jumlahBatuAwal; i++) {
+                    const pos = randomPosisiDalamPulau();
+                    this.resources.push(new Resource(pos.x, pos.y, 'batu'));
+                }
+                for (let i = 0; i < jumlahSemakAwal; i++) {
+                    const pos = randomPosisiDalamPulau();
+                    this.resources.push(new Resource(pos.x, pos.y, 'semak'));
+                }
+
+                // Enemy
+                for (let i = 0; i < 4; i++) {
+                    const pos = randomPosisiDalamPulau();
+                    this.enemies.push(new Enemy(pos.x, pos.y));
+                }
+
+                // Kelinci
+                for (let i = 0; i < 5; i++) {
+                    const pos = randomPosisiDalamPulau();
+                    this.kelincis.push(new Kelinci(pos.x, pos.y));
+                }
+
+                this.jumlahKayu = 0;
+                this.jumlahBatu = 0;
+                this.jumlahBerry = 0;
+                this.jumlahDagingMentah = 0;
+                this.jumlahDagingMasak = 0;
+                this.jumlahKulit = 0;
+                this.punyaKapak = false;
+                this.pesan = 'Kamu hidup kembali!';
+                this.xp = 0;
+                this.level = 1;
+                this.hunger = 100;
+                this.kesehatan = 100;
+                this.gameOver = false;
+                this.jam = 8;
+                this.malam = false;
+
+                this.lastUpdateTime = performance.now();
+                this.lastHungerTime = performance.now();
+                this.lastFrameTime = performance.now();
+
+                restartButton.style.display = 'none';
+            }
+        };
+
+        // ==========================================
+        // FUNGSI MENGGAMBAR (RENDER)
+        // ==========================================
 
         function gambarPulau() {
             ctx.fillStyle = '#F4D03F';
@@ -378,109 +780,17 @@
             ctx.fill();
         }
 
-        function gambarPemain() {
-            ctx.fillStyle = '#E74C3C';
-            ctx.fillRect(playerX - playerSize / 2, playerY - playerSize / 2, playerSize, playerSize);
-        }
-
-        function gambarPohon(x, y) {
-            ctx.fillStyle = '#8B4513';
-            ctx.fillRect(x - 4, y - 10, 8, 20);
-            ctx.fillStyle = '#27AE60';
-            ctx.beginPath();
-            ctx.arc(x, y - 15, 12, 0, Math.PI * 2);
-            ctx.fill();
-        }
-
-        function gambarBatu(x, y) {
-            ctx.fillStyle = '#7F8C8D';
-            ctx.beginPath();
-            ctx.arc(x, y, 10, 0, Math.PI * 2);
-            ctx.fill();
-            ctx.fillStyle = '#95A5A6';
-            ctx.beginPath();
-            ctx.arc(x - 3, y - 3, 4, 0, Math.PI * 2);
-            ctx.fill();
-        }
-
-        function gambarSemak(x, y) {
-            ctx.fillStyle = '#2ECC71';
-            ctx.beginPath();
-            ctx.arc(x, y, 12, 0, Math.PI * 2);
-            ctx.fill();
-            ctx.fillStyle = '#FF0000';
-            ctx.beginPath();
-            ctx.arc(x - 4, y - 4, 3, 0, Math.PI * 2);
-            ctx.fill();
-            ctx.beginPath();
-            ctx.arc(x + 4, y - 3, 3, 0, Math.PI * 2);
-            ctx.fill();
-            ctx.beginPath();
-            ctx.arc(x, y + 5, 3, 0, Math.PI * 2);
-            ctx.fill();
-        }
-
-        function gambarMusuh(x, y) {
-            ctx.fillStyle = '#7F8C8D';
-            ctx.beginPath();
-            ctx.arc(x, y, 12, 0, Math.PI * 2);
-            ctx.fill();
-            ctx.fillStyle = '#95A5A6';
-            ctx.beginPath();
-            ctx.arc(x + 8, y - 5, 7, 0, Math.PI * 2);
-            ctx.fill();
-            ctx.fillStyle = '#FF0000';
-            ctx.beginPath();
-            ctx.arc(x + 9, y - 7, 2, 0, Math.PI * 2);
-            ctx.fill();
-            ctx.fillStyle = '#7F8C8D';
-            ctx.beginPath();
-            ctx.arc(x - 12, y + 5, 5, 0, Math.PI * 2);
-            ctx.fill();
-        }
-
-        function gambarKelinci(x, y) {
-            ctx.fillStyle = '#D2B48C';
-            ctx.beginPath();
-            ctx.arc(x, y, 8, 0, Math.PI * 2);
-            ctx.fill();
-            ctx.fillStyle = '#DEB887';
-            ctx.beginPath();
-            ctx.arc(x + 6, y - 4, 5, 0, Math.PI * 2);
-            ctx.fill();
-            ctx.fillStyle = '#A0522D';
-            ctx.fillRect(x + 3, y - 12, 2, 6);
-            ctx.fillRect(x + 6, y - 12, 2, 6);
-            ctx.fillStyle = '#FFFFFF';
-            ctx.beginPath();
-            ctx.arc(x - 8, y + 2, 3, 0, Math.PI * 2);
-            ctx.fill();
-        }
-
-        function gambarCampfire(x, y) {
-            ctx.fillStyle = '#8B4513';
-            ctx.fillRect(x - 8, y, 16, 4);
-            ctx.fillRect(x - 4, y - 6, 16, 4);
-            ctx.fillStyle = '#FF4500';
-            ctx.beginPath();
-            ctx.arc(x, y - 4, 6, 0, Math.PI * 2);
-            ctx.fill();
-            ctx.fillStyle = '#FFD700';
-            ctx.beginPath();
-            ctx.arc(x, y - 5, 3, 0, Math.PI * 2);
-            ctx.fill();
-        }
-
         function gambarUI() {
             ctx.font = '16px Arial, sans-serif';
 
+            // ===== HUD DASAR =====
             // Health bar
             ctx.fillStyle = '#FFFFFF';
             ctx.fillText('❤️ Health:', 10, 25);
             ctx.fillStyle = '#555';
             ctx.fillRect(100, 12, 80, 12);
             ctx.fillStyle = '#FF0000';
-            ctx.fillRect(100, 12, kesehatan, 12);
+            ctx.fillRect(100, 12, gameState.kesehatan, 12);
 
             // Hunger bar
             ctx.fillStyle = '#FFFFFF';
@@ -488,39 +798,77 @@
             ctx.fillStyle = '#555';
             ctx.fillRect(100, 37, 80, 12);
             ctx.fillStyle = '#FFA500';
-            ctx.fillRect(100, 37, hunger, 12);
-
-            // Inventory dengan emoji
-            ctx.fillStyle = '#FFFFFF';
-            ctx.fillText('🪵 Kayu: ' + jumlahKayu, 10, 75);
-            ctx.fillText('🪨 Batu: ' + jumlahBatu, 10, 95);
-            ctx.fillText('🫐 Berry: ' + jumlahBerry, 10, 115);
-            ctx.fillText('🥩 Daging M: ' + jumlahDagingMentah, 10, 135);
-            ctx.fillText('🍗 Daging K: ' + jumlahDagingMasak, 10, 155);
-            ctx.fillText('🧶 Kulit: ' + jumlahKulit, 10, 175);
-            ctx.fillText('🪓 Kapak: ' + (punyaKapak ? 'Ya' : 'Tidak'), 10, 195);
-            ctx.fillText('🔥 Campfire: ' + campfires.length, 10, 215);
-
-            // Level & XP
-            ctx.fillStyle = '#00FFFF';
-            ctx.fillText('⭐ Level: ' + level + '  XP: ' + xp + '/' + xpPerLevel, 10, 245);
+            ctx.fillRect(100, 37, gameState.hunger, 12);
 
             // Waktu
             ctx.fillStyle = '#FFFF00';
-            ctx.fillText('🕒 Waktu: ' + Math.floor(jam) + ':00 ' + (malam ? '🌙 Malam' : '☀️ Siang'), 10, 270);
+            ctx.fillText('🕒 ' + Math.floor(gameState.jam) + ':00 ' + (gameState.malam ? '🌙' : '☀️'), 10, 80);
 
-            // Kontrol
-            ctx.fillStyle = '#FFFFFF';
-            ctx.fillText('E=Kumpul  C=Kapak  Q=Berry  T=Makan Daging', 10, 300);
-            ctx.fillText('F=Buruan  B=Campfire  R=Masak  SPASI=Serang', 10, 320);
-            ctx.fillText('P=Simpan  L=Muat', 10, 340);
-
-            if (pesan !== '') {
+            // Pesan singkat
+            if (gameState.pesan !== '') {
                 ctx.fillStyle = '#FFFF00';
-                ctx.fillText(pesan, 10, 370);
+                ctx.fillText(gameState.pesan, 10, 110);
             }
 
-            if (gameOver) {
+            // Hint tombol menu
+            ctx.fillStyle = '#FFFFFF';
+            ctx.fillText('Tab: Menu', 10, 140);
+
+            // ===== MENU INVENTORY / CRAFTING =====
+            if (gameState.showMenu) {
+                // Panel semi-transparan
+                ctx.fillStyle = 'rgba(0,0,0,0.85)';
+                ctx.fillRect(200, 40, 400, 320);
+
+                ctx.fillStyle = '#FFFFFF';
+                ctx.font = 'bold 18px Arial';
+                ctx.fillText('🎒 INVENTORY', 230, 70);
+                ctx.font = '14px Arial';
+
+                let y = 100;
+                const itemList = [
+                    `🪵 Kayu: ${gameState.jumlahKayu}`,
+                    `🪨 Batu: ${gameState.jumlahBatu}`,
+                    `🫐 Berry: ${gameState.jumlahBerry}`,
+                    `🥩 Daging Mentah: ${gameState.jumlahDagingMentah}`,
+                    `🍗 Daging Masak: ${gameState.jumlahDagingMasak}`,
+                    `🧶 Kulit: ${gameState.jumlahKulit}`,
+                    `🪓 Kapak: ${gameState.punyaKapak ? 'Ya' : 'Tidak'}`,
+                    `🔥 Campfire: ${gameState.campfires.length}`,
+                    `⭐ Level: ${gameState.level} - XP: ${gameState.xp}/${gameState.xpPerLevel}`
+                ];
+
+                itemList.forEach(text => {
+                    ctx.fillStyle = '#FFFFFF';
+                    ctx.fillText(text, 230, y);
+                    y += 22;
+                });
+
+                y += 10;
+                ctx.fillStyle = '#00FFFF';
+                ctx.fillText('🛠️ Resep:', 230, y);
+                y += 22;
+
+                const resep = [
+                    'Kapak Batu: 4 Kayu + 2 Batu (tekan C)',
+                    'Campfire: 5 Kayu (tekan B)',
+                    'Masak Daging: dekat campfire (tekan R)',
+                    'Makan Berry: Q | Daging: T',
+                    'Interaksi: E / SPASI'
+                ];
+
+                resep.forEach(text => {
+                    ctx.fillStyle = '#FFFFFF';
+                    ctx.fillText(text, 230, y);
+                    y += 22;
+                });
+
+                ctx.fillStyle = '#FFFF00';
+                ctx.fillText('Tekan Tab/I untuk menutup', 230, y + 10);
+            }
+
+            // ===== GAME OVER =====
+            if (gameState.gameOver) {
                 ctx.fillStyle = 'rgba(0,0,0,0.7)';
                 ctx.fillRect(0, 0, canvas.width, canvas.height);
                 ctx.fillStyle = '#FF0000';
@@ -536,48 +884,36 @@
         }
 
         function render() {
-            cameraX = playerX - canvas.width / 2;
-            cameraY = playerY - canvas.height / 2;
-
+            const cameraX = gameState.player.x - canvas.width / 2;
+            const cameraY = gameState.player.y - canvas.height / 2;
+            
             ctx.clearRect(0, 0, canvas.width, canvas.height);
-
+            
             ctx.fillStyle = '#2E86C1';
             ctx.fillRect(0, 0, canvas.width, canvas.height);
-
+            
+            // Efek screen shake
+            let shakeX = 0;
+            let shakeY = 0;
+            if (performance.now() < gameState.screenShakeUntil) {
+                shakeX = (Math.random() - 0.5) * gameState.screenShakeIntensity;
+                shakeY = (Math.random() - 0.5) * gameState.screenShakeIntensity;
+            }
+            
             ctx.save();
-            ctx.translate(-cameraX, -cameraY);
+            ctx.translate(-cameraX + shakeX, -cameraY + shakeY);
 
             gambarPulau();
 
-            pohon.forEach(function(p) {
-                gambarPohon(p.x, p.y);
-            });
-
-            batu.forEach(function(b) {
-                gambarBatu(b.x, b.y);
-            });
-
-            semak.forEach(function(s) {
-                gambarSemak(s.x, s.y);
-            });
-
-            campfires.forEach(function(c) {
-                gambarCampfire(c.x, c.y);
-            });
-
-            kelinci.forEach(function(k) {
-                gambarKelinci(k.x, k.y);
-            });
-
-            musuh.forEach(function(m) {
-                gambarMusuh(m.x, m.y);
-            });
-
-            gambarPemain();
+            gameState.resources.forEach(r => r.draw());
+            gameState.campfires.forEach(c => c.draw());
+            gameState.kelincis.forEach(k => k.draw());
+            gameState.enemies.forEach(e => e.draw());
+            gameState.player.draw();
 
             ctx.restore();
 
-            if (malam) {
+            if (gameState.malam) {
                 ctx.fillStyle = 'rgba(0,0,40,0.5)';
                 ctx.fillRect(0, 0, canvas.width, canvas.height);
             }
@@ -585,151 +921,92 @@
             gambarUI();
         }
 
-        // =====================
-        // FUNGSI GAMEPLAY
-        // =====================
+        // ==========================================
+        // GAMEPLAY FUNCTIONS (FUNGSI MEKANIK)
+        // ==========================================
 
         function tambahXP(jumlah) {
-            xp += jumlah;
-            if (xp >= xpPerLevel) {
-                xp -= xpPerLevel;
-                level++;
-                pesan = 'LEVEL UP! Sekarang level ' + level + ' (serangan makin kuat)';
+            gameState.xp += jumlah;
+            if (gameState.xp >= gameState.xpPerLevel) {
+                gameState.xp -= gameState.xpPerLevel;
+                gameState.level++;
+                gameState.pesan = 'LEVEL UP! Sekarang level ' + gameState.level + ' (serangan makin kuat)';
             }
         }
 
-        function kumpulkanResource() {
-            for (let i = 0; i < pohon.length; i++) {
-                const p = pohon[i];
-                const jarak = Math.sqrt((playerX - p.x) ** 2 + (playerY - p.y) ** 2);
-                if (jarak <= 30) {
-                    pohon.splice(i, 1);
-                    jadwalkanRespawn('pohon');
-                    if (punyaKapak) {
-                        jumlahKayu += 5;
-                        pesan = '🪵 Kayu +5 (dengan kapak)';
-                    } else {
-                        jumlahKayu += 3;
-                        pesan = '🪵 Kayu +3';
-                    }
-                    tambahXP(5);
-                    return;
-                }
-            }
-
-            for (let i = 0; i < batu.length; i++) {
-                const b = batu[i];
-                const jarak = Math.sqrt((playerX - b.x) ** 2 + (playerY - b.y) ** 2);
-                if (jarak <= 30) {
-                    batu.splice(i, 1);
-                    jadwalkanRespawn('batu');
-                    jumlahBatu += 2;
-                    pesan = '🪨 Batu +2';
-                    tambahXP(5);
-                    return;
-                }
-            }
-
-            for (let i = 0; i < semak.length; i++) {
-                const s = semak[i];
-                const jarak = Math.sqrt((playerX - s.x) ** 2 + (playerY - s.y) ** 2);
-                if (jarak <= 30) {
-                    semak.splice(i, 1);
-                    jadwalkanRespawn('semak');
-                    jumlahBerry += 2;
-                    pesan = '🫐 Berry +2';
-                    tambahXP(3);
-                    return;
-                }
-            }
-        }
+        
 
         function makanBerry() {
-            if (jumlahBerry > 0) {
-                if (hunger < 100) {
-                    hunger += 20;
-                    if (hunger > 100) hunger = 100;
-                    jumlahBerry--;
-                    pesan = '🫐 Kamu makan berry (+20 hunger)';
+            if (gameState.jumlahBerry > 0) {
+                if (gameState.hunger < 100) {
+                    gameState.hunger += 20;
+                    if (gameState.hunger > 100) gameState.hunger = 100;
+                    gameState.jumlahBerry--;
+                    gameState.pesan = '🫐 Kamu makan berry (+20 hunger)';
                 } else {
-                    pesan = 'Hunger sudah penuh!';
+                    gameState.pesan = 'Hunger sudah penuh!';
                 }
             } else {
-                pesan = 'Kamu tidak punya berry!';
+                gameState.pesan = 'Kamu tidak punya berry!';
             }
         }
 
         function makanDaging() {
-            if (jumlahDagingMasak > 0) {
-                jumlahDagingMasak--;
-                hunger += 25;
-                if (hunger > 100) hunger = 100;
-                pesan = '🍗 Kamu makan daging masak (+25 hunger)';
-            } else if (jumlahDagingMentah > 0) {
-                jumlahDagingMentah--;
-                hunger += 15;
-                if (hunger > 100) hunger = 100;
+            if (gameState.jumlahDagingMasak > 0) {
+                gameState.jumlahDagingMasak--;
+                gameState.hunger += 25;
+                if (gameState.hunger > 100) gameState.hunger = 100;
+                gameState.pesan = '🍗 Kamu makan daging masak (+25 hunger)';
+            } else if (gameState.jumlahDagingMentah > 0) {
+                 gameState.jumlahDagingMentah--;
+                gameState.hunger += 15;
+                if (gameState.hunger > 100) gameState.hunger = 100;
                 if (Math.random() < 0.5) {
-                    kesehatan -= 5;
-                    if (kesehatan < 0) kesehatan = 0;
-                    pesan = '🥩 Kamu makan daging mentah dan sakit (-5 health)';
+                    gameState.kesehatan -= 5;
+                    if (gameState.kesehatan < 0) gameState.kesehatan = 0;
+                    gameState.pesan = '🥩 Kamu makan daging mentah dan sakit (-5 health)';
                 } else {
-                    pesan = '🥩 Kamu makan daging mentah (+15 hunger)';
+                    gameState.pesan = '🥩 Kamu makan daging mentah (+15 hunger)';
                 }
             } else {
-                pesan = 'Kamu tidak punya daging!';
+                gameState.pesan = 'Kamu tidak punya daging!';
             }
         }
 
-        function berburuKelinci() {
-            for (let i = 0; i < kelinci.length; i++) {
-                const k = kelinci[i];
-                const jarak = Math.sqrt((playerX - k.x) ** 2 + (playerY - k.y) ** 2);
-                if (jarak <= 30) {
-                    kelinci.splice(i, 1);
-                    jadwalkanRespawn('kelinci');
-                    jumlahDagingMentah += 2;
-                    jumlahKulit += 1;
-                    pesan = '🐇 Berhasil berburu kelinci! (+2 daging mentah, +1 kulit)';
-                    tambahXP(10);
-                    return;
-                }
-            }
-            pesan = 'Tidak ada kelinci di dekatmu!';
-        }
+        
 
         function craftKapak() {
-            if (punyaKapak) {
-                pesan = 'Kamu sudah punya kapak!';
+            if (gameState.punyaKapak) {
+                gameState.pesan = 'Kamu sudah punya kapak!';
                 return;
             }
-            if (jumlahKayu >= 4 && jumlahBatu >= 2) {
-                jumlahKayu -= 4;
-                jumlahBatu -= 2;
-                punyaKapak = true;
-                pesan = '🪓 Berhasil membuat Kapak Batu!';
+            if (gameState.jumlahKayu >= 4 && gameState.jumlahBatu >= 2) {
+                gameState.jumlahKayu -= 4;
+                gameState.jumlahBatu -= 2;
+                gameState.punyaKapak = true;
+                gameState.pesan = '🪓 Berhasil membuat Kapak Batu!';
                 tambahXP(15);
             } else {
-                pesan = 'Bahan tidak cukup! Butuh 4 kayu dan 2 batu.';
+                gameState.pesan = 'Bahan tidak cukup! Butuh 4 kayu dan 2 batu.';
             }
         }
 
         function buatCampfire() {
-            if (jumlahKayu >= 5) {
-                jumlahKayu -= 5;
-                campfires.push({ x: playerX, y: playerY });
-                pesan = '🔥 Campfire diletakkan di posisimu!';
+            if (gameState.jumlahKayu >= 5) {
+                gameState.jumlahKayu -= 5;
+                gameState.campfires.push(new Campfire(gameState.player.x, gameState.player.y));
+                gameState.pesan = '🔥 Campfire diletakkan di posisimu!';
                 tambahXP(15);
             } else {
-                pesan = 'Butuh 5 kayu untuk membuat campfire!';
+                gameState.pesan = 'Butuh 5 kayu untuk membuat campfire!';
             }
         }
 
         function masakDaging() {
             let dekatCampfire = false;
-            for (let i = 0; i < campfires.length; i++) {
-                const c = campfires[i];
-                const jarak = Math.sqrt((playerX - c.x) ** 2 + (playerY - c.y) ** 2);
+            for (let i = 0; i < gameState.campfires.length; i++) {
+                const c = gameState.campfires[i];
+                const jarak = Math.sqrt((gameState.player.x - c.x) ** 2 + (gameState.player.y - c.y) ** 2);
                 if (jarak <= 50) {
                     dekatCampfire = true;
                     break;
@@ -737,227 +1014,158 @@
             }
 
             if (!dekatCampfire) {
-                pesan = 'Kamu harus dekat dengan campfire untuk memasak!';
+                gameState.pesan = 'Kamu harus dekat dengan campfire untuk memasak!';
                 return;
             }
 
-            if (jumlahDagingMentah > 0) {
-                jumlahDagingMentah--;
-                jumlahDagingMasak++;
-                pesan = '🍗 Daging mentah dimasak! (+1 daging masak)';
+            if (gameState.jumlahDagingMentah > 0) {
+                gameState.jumlahDagingMentah--;
+                gameState.jumlahDagingMasak++;
+                gameState.pesan = '🍗 Daging mentah dimasak! (+1 daging masak)';
                 tambahXP(5);
             } else {
-                pesan = 'Kamu tidak punya daging mentah!';
+                gameState.pesan = 'Kamu tidak punya daging mentah!';
             }
         }
 
-        function serangMusuh() {
-            let terdekat = null;
-            let jarakTerdekat = 9999;
-
-            for (let i = 0; i < musuh.length; i++) {
-                const m = musuh[i];
-                const jarak = Math.sqrt((playerX - m.x) ** 2 + (playerY - m.y) ** 2);
-                if (jarak < 50 && jarak < jarakTerdekat) {
-                    terdekat = i;
-                    jarakTerdekat = jarak;
-                }
-            }
-
-            if (terdekat !== null) {
-                const damage = 10 + (level - 1) * 5;
-                musuh[terdekat].hp -= damage;
-                pesan = '⚔️ Kamu menyerang serigala! (-' + damage + ' HP)';
-                if (musuh[terdekat].hp <= 0) {
-                    pesan = '💀 Serigala mati!';
-                    musuh.splice(terdekat, 1);
-                    tambahXP(20);
-                }
-            } else {
-                pesan = 'Tidak ada musuh di dekatmu!';
-            }
-        }
-
-        function updateMusuh() {
-            if (gameOver) return;
-
-            musuh.forEach(function(m) {
-                const oldX = m.x;
-                const oldY = m.y;
-
-                const jarakKePemain = Math.sqrt((playerX - m.x) ** 2 + (playerY - m.y) ** 2);
-
-                let kelinciTerdekat = null;
-                let jarakKeKelinci = Infinity;
-                for (let i = 0; i < kelinci.length; i++) {
-                    const k = kelinci[i];
-                    const jarak = Math.sqrt((m.x - k.x) ** 2 + (m.y - k.y) ** 2);
-                    if (jarak < jarakKeKelinci) {
-                        jarakKeKelinci = jarak;
-                        kelinciTerdekat = i;
-                    }
-                }
-
-                let targetX = null;
-                let targetY = null;
-                let speed = 1.5;
-
-                if (malam && jarakKePemain < 250) {
-                    targetX = playerX;
-                    targetY = playerY;
-                } else if (kelinciTerdekat !== null && jarakKeKelinci < 200) {
-                    const target = kelinci[kelinciTerdekat];
-                    targetX = target.x;
-                    targetY = target.y;
-                    speed = 1.8;
-                } else {
-                    if (!malam && jarakKePemain < 120) {
-                        const arahX = (m.x - playerX) / jarakKePemain;
-                        const arahY = (m.y - playerY) / jarakKePemain;
-                        m.x += arahX * 0.5;
-                        m.y += arahY * 0.5;
-                    }
-                }
-
-                if (targetX !== null && targetY !== null) {
-                    const jarakKeTarget = Math.sqrt((targetX - m.x) ** 2 + (targetY - m.y) ** 2);
-                    if (jarakKeTarget > 1) {
-                        const arahX = (targetX - m.x) / jarakKeTarget;
-                        const arahY = (targetY - m.y) / jarakKeTarget;
-                        m.x += arahX * speed;
-                        m.y += arahY * speed;
-                    }
-                }
-
-                if (!isInsidePulau(m.x, m.y)) {
-                    m.x = oldX;
-                    m.y = oldY;
-                }
-
-                if (kelinciTerdekat !== null && jarakKeKelinci < 15) {
-                    kelinci.splice(kelinciTerdekat, 1);
-                    jadwalkanRespawn('kelinci');
-                    m.hp = Math.min(m.hp + 10, 30);
-                    pesan = '🐺 Serigala memakan kelinci!';
-                }
-
-                const jarakSekarang = Math.sqrt((playerX - m.x) ** 2 + (playerY - m.y) ** 2);
-
-                if (malam && jarakSekarang < 25 && m.cooldown <= 0) {
-                    kesehatan -= 5;
-                    if (kesehatan < 0) kesehatan = 0;
-                    pesan = '🐺 Kamu digigit serigala!';
-                    m.cooldown = 10;
-
-                    if (kesehatan === 0) {
-                        gameOver = true;
-                        pesan = 'Kamu mati diserang serigala...';
-                    }
-                }
-
-                if (m.cooldown > 0) {
-                    m.cooldown--;
-                }
-            });
-        }
-
-        function updateKelinci() {
-            if (gameOver) return;
-
-            kelinci.forEach(function(k) {
-                const oldX = k.x;
-                const oldY = k.y;
-
-                k.timer++;
-                if (k.timer > 50) {
-                    const sudut = Math.random() * Math.PI * 2;
-                    k.arahX = Math.cos(sudut);
-                    k.arahY = Math.sin(sudut);
-                    k.timer = 0;
-                }
-
-                const speed = 0.8;
-                k.x += k.arahX * speed;
-                k.y += k.arahY * speed;
-
-                if (!isInsidePulau(k.x, k.y)) {
-                    k.x = oldX;
-                    k.y = oldY;
-                    const sudut = Math.random() * Math.PI * 2;
-                    k.arahX = Math.cos(sudut);
-                    k.arahY = Math.sin(sudut);
-                }
-            });
-        }
+        
 
         function updateWaktu() {
-            if (gameOver) return;
+            if (gameState.gameOver) return;
 
-            jam += 0.01;
-            if (jam >= 24) jam = 0;
+            gameState.jam += 0.01;
+            if (gameState.jam >= 24) gameState.jam = 0;
 
-            malam = jam >= 18 || jam < 6;
+            gameState.malam = gameState.jam >= 18 || gameState.jam < 6;
         }
 
-        function jadwalkanRespawn(tipe) {
-            let delay;
-            if (tipe === 'pohon') delay = RESPAWN_DELAY_POHON;
-            else if (tipe === 'batu') delay = RESPAWN_DELAY_BATU;
-            else if (tipe === 'semak') delay = RESPAWN_DELAY_SEMAK;
-            else if (tipe === 'kelinci') delay = RESPAWN_DELAY_KELINCI;
+        function interaksi() {
+            const player = gameState.player;
 
-            respawnList.push({
-                tipe: tipe,
-                waktu: Date.now() + delay
-            });
-        }
-
-        function cekRespawn() {
-            const sekarang = Date.now();
-            for (let i = respawnList.length - 1; i >= 0; i--) {
-                const item = respawnList[i];
-                if (sekarang >= item.waktu) {
-                    const pos = randomPosisiDalamPulau();
-                    if (item.tipe === 'pohon') {
-                        pohon.push({ x: pos.x, y: pos.y });
-                    } else if (item.tipe === 'batu') {
-                        batu.push({ x: pos.x, y: pos.y });
-                    } else if (item.tipe === 'semak') {
-                        semak.push({ x: pos.x, y: pos.y });
-                    } else if (item.tipe === 'kelinci') {
-                        kelinci.push({
-                            x: pos.x,
-                            y: pos.y,
-                            arahX: Math.random() * 2 - 1,
-                            arahY: Math.random() * 2 - 1,
-                            timer: Math.floor(Math.random() * 50)
-                        });
-                    }
-                    respawnList.splice(i, 1);
+            // ===== 1. Cari musuh terdekat (jarak serang 50) =====
+            let musuhTerdekat = null;
+            let jarakMusuh = Infinity;
+            for (let i = 0; i < gameState.enemies.length; i++) {
+                const m = gameState.enemies[i];
+                const d = Math.sqrt((player.x - m.x) ** 2 + (player.y - m.y) ** 2);
+                if (d < jarakMusuh) {
+                    jarakMusuh = d;
+                    musuhTerdekat = i;
                 }
             }
-        }
 
-        // =====================
-        // KONTROL
-        // =====================
-
-        document.addEventListener('keydown', function(event) {
-            if (gameOver) {
-                if (event.key === 'r' || event.key === 'R') {
-                    restartGame();
+            if (musuhTerdekat !== null && jarakMusuh < 50) {
+                const damage = 10 + (gameState.level - 1) * 5;
+                gameState.enemies[musuhTerdekat].hp -= damage;
+                gameState.pesan = '⚔️ Kamu menyerang serigala! (-' + damage + ' HP)';
+                if (gameState.enemies[musuhTerdekat].hp <= 0) {
+                    gameState.pesan = '💀 Serigala mati!';
+                    gameState.enemies.splice(musuhTerdekat, 1);
+                    tambahXP(20);
                 }
                 return;
             }
 
-            keys[event.key] = true;
+            // ===== 2. Cari kelinci terdekat (jarak buru 30) =====
+            let kelinciTerdekat = null;
+            let jarakKelinci = Infinity;
+            for (let i = 0; i < gameState.kelincis.length; i++) {
+                const k = gameState.kelincis[i];
+                const d = Math.sqrt((player.x - k.x) ** 2 + (player.y - k.y) ** 2);
+                if (d < jarakKelinci) {
+                    jarakKelinci = d;
+                    kelinciTerdekat = i;
+                }
+            }
 
+            if (kelinciTerdekat !== null && jarakKelinci <= 30) {
+                gameState.kelincis.splice(kelinciTerdekat, 1);
+                gameState.jadwalkanRespawn('kelinci');
+                gameState.jumlahDagingMentah += 2;
+                gameState.jumlahKulit += 1;
+                gameState.pesan = '🐇 Berhasil berburu kelinci! (+2 daging mentah, +1 kulit)';
+                tambahXP(10);
+                return;
+            }
+
+            // ===== 3. Cari resource terdekat (jarak kumpul 30) =====
+            let resourceTerdekat = null;
+            let jarakResource = Infinity;
+            for (let i = 0; i < gameState.resources.length; i++) {
+                const r = gameState.resources[i];
+                const d = Math.sqrt((player.x - r.x) ** 2 + (player.y - r.y) ** 2);
+                if (d < jarakResource) {
+                    jarakResource = d;
+                    resourceTerdekat = i;
+                }
+            }
+
+            if (resourceTerdekat !== null && jarakResource <= 30) {
+                const r = gameState.resources[resourceTerdekat];
+                const tipe = r.tipe;
+                gameState.resources.splice(resourceTerdekat, 1);
+                gameState.jadwalkanRespawn(tipe);
+
+                if (tipe === 'pohon') {
+                    if (gameState.punyaKapak) {
+                        gameState.jumlahKayu += 5;
+                        gameState.pesan = '🪵 Kayu +5 (dengan kapak)';
+                    } else {
+                        gameState.jumlahKayu += 3;
+                        gameState.pesan = '🪵 Kayu +3';
+                    }
+                } else if (tipe === 'batu') {
+                    gameState.jumlahBatu += 2;
+                    gameState.pesan = '🪨 Batu +2';
+                } else if (tipe === 'semak') {
+                    gameState.jumlahBerry += 2;
+                    gameState.pesan = '🫐 Berry +2';
+                }
+                tambahXP(5);
+                return;
+            }
+
+            // Tidak ada objek interaksi di dekat pemain
+            gameState.pesan = 'Tidak ada objek di dekatmu.';
+        }
+
+        // ==========================================
+        // INPUT / KONTROL KEYBOARD
+        // ==========================================
+
+        document.addEventListener('keydown', function(event) {
+            // Toggle menu inventory/crafting
+            if (event.key === 'Tab') {
+                event.preventDefault();
+                gameState.showMenu = !gameState.showMenu;
+                return;
+            }
+            if (event.key === 'i' || event.key === 'I') {
+                gameState.showMenu = !gameState.showMenu;
+                return;
+            }
+
+            if (gameState.gameOver) {
+                if (event.key === 'r' || event.key === 'R') {
+                    gameState.restartGame();
+                }
+                return;
+            }
+
+            gameState.keys[event.key] = true;
+
+            // Cegah layar ikut scrolling saat main pakai keyboard
             if (['w', 'a', 's', 'd', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', ' '].includes(event.key)) {
                 event.preventDefault();
             }
 
             if (event.key === 'e' || event.key === 'E') {
-                kumpulkanResource();
+                interaksi();
+            }
+
+            if (event.key === ' ') {
+                event.preventDefault();
+                interaksi();
             }
 
             if (event.key === 'c' || event.key === 'C') {
@@ -972,91 +1180,65 @@
                 makanDaging();
             }
 
-            if (event.key === 'f' || event.key === 'F') {
-                berburuKelinci();
-            }
-
             if (event.key === 'b' || event.key === 'B') {
                 buatCampfire();
             }
 
-            if (event.key === 'r' || event.key === 'R') {
-                // R sudah dipakai restart saat game over
-            }
-
             if (event.key === 'p' || event.key === 'P') {
-                simpanGame();
+                gameState.simpanGame();
             }
 
             if (event.key === 'l' || event.key === 'L') {
-                muatGame();
-            }
-
-            if (event.key === ' ') {
-                serangMusuh();
+                gameState.muatGame();
             }
         });
 
         document.addEventListener('keyup', function(event) {
-            keys[event.key] = false;
+            gameState.keys[event.key] = false;
         });
 
-        restartButton.addEventListener('click', restartGame);
+        restartButton.addEventListener('click', function() {
+            gameState.restartGame();
+        });
 
-        // =====================
-        // GAME LOOP (requestAnimationFrame)
-        // =====================
+        // ==========================================
+        // GAME LOOP UTAMA
+        // ==========================================
 
         function gameLoop(now) {
-            if (!gameOver) {
-                const deltaTime = Math.min((now - lastFrameTime) / 1000, 0.1);
-                lastFrameTime = now;
+            if (!gameState.gameOver) {
+                // Delta time (waktu jeda antar frame)
+                const deltaTime = Math.min((now - gameState.lastFrameTime) / 1000, 0.1);
+                gameState.lastFrameTime = now;
 
-                // ===== PERGERAKAN PEMAIN =====
-                let dx = 0;
-                let dy = 0;
+                // Update pergerakan pemain
+                gameState.player.keys = gameState.keys;
+                gameState.player.update(deltaTime);
 
-                if (keys['w'] || keys['ArrowUp']) dy -= 1;
-                if (keys['s'] || keys['ArrowDown']) dy += 1;
-                if (keys['a'] || keys['ArrowLeft']) dx -= 1;
-                if (keys['d'] || keys['ArrowRight']) dx += 1;
-
-                if (dx !== 0 || dy !== 0) {
-                    const length = Math.sqrt(dx * dx + dy * dy);
-                    dx /= length;
-                    dy /= length;
-
-                    const newX = playerX + dx * kecepatanPemain * deltaTime;
-                    const newY = playerY + dy * kecepatanPemain * deltaTime;
-
-                    if (isInsidePulau(newX, newY)) {
-                        playerX = newX;
-                        playerY = newY;
-                    }
-                }
-
-                if (now - lastUpdateTime >= 100) {
+                // Update logika lainnya setiap 100ms untuk performa
+                if (now - gameState.lastUpdateTime >= 100) {
                     updateWaktu();
-                    updateMusuh();
-                    updateKelinci();
-                    cekRespawn();
-                    lastUpdateTime = now;
+                    gameState.enemies.forEach(e => e.update(gameState));
+                    gameState.kelincis.forEach(k => k.update(gameState));
+                    gameState.cekRespawn();
+                    gameState.lastUpdateTime = now;
                 }
 
-                if (now - lastHungerTime >= 2000) {
-                    hunger -= (malam ? 3 : 2);
-                    if (hunger < 0) hunger = 0;
+                // Update rasa lapar setiap 2000ms (2 detik)
+                if (now - gameState.lastHungerTime >= 2000) {
+                    gameState.hunger -= (gameState.malam ? 3 : 2); // Lapar lebih cepat saat malam
+                    if (gameState.hunger < 0) gameState.hunger = 0;
 
-                    if (hunger === 0) {
-                        kesehatan -= 1;
-                        if (kesehatan < 0) kesehatan = 0;
-                        if (kesehatan === 0) {
-                            gameOver = true;
-                            pesan = 'Kamu mati kelaparan...';
+                    if (gameState.hunger === 0) {
+                        gameState.kesehatan -= 1;
+                        if (gameState.kesehatan < 0) gameState.kesehatan = 0;
+                        if (gameState.kesehatan === 0) {
+                            gameState.gameOver = true;
+                            gameState.pesan = 'Kamu mati kelaparan...';
                         }
                     }
 
-                    lastHungerTime = now;
+                    gameState.lastHungerTime = now;
                 }
             }
 
@@ -1065,7 +1247,17 @@
             requestAnimationFrame(gameLoop);
         }
 
+        // ==========================================
+        // MULAI GAME
+        // ==========================================
+        
+        // Inisialisasi awal
+        gameState.restartGame();
+        gameState.player.keys = gameState.keys;
+
+        // Panggil putaran game pertama kali
         requestAnimationFrame(gameLoop);
+        
     </script>
 </body>
 </html>
