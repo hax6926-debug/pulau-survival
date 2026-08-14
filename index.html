@@ -49,15 +49,20 @@
         const canvas = document.getElementById('gameCanvas');
         const ctx = canvas.getContext('2d');
         const restartButton = document.getElementById('restartButton');
+        
+        // Variabel untuk menghitung FPS
+let fps = 0;
+let frameCount = 0;
+let fpsTime = 0;
 
         // Ukuran dunia
-        const worldWidth = 1000;
-        const worldHeight = 1000;
+        const worldWidth = 1600;
+        const worldHeight = 1600;
 
         // Generate bentuk pulau organik yang TETAP (deterministik)
         const pulauPoints = [];
         const jumlahSegmen = 16;
-        const radiusDasar = 400;
+        const radiusDasar = 650;
         
         for (let i = 0; i < jumlahSegmen; i++) {
             const sudut = (i / jumlahSegmen) * Math.PI * 2;
@@ -98,17 +103,17 @@
         
         // Cek apakah pemain menabrak objek (pohon/batu/semak/campfire)
         function isBlocked(x, y) {
-            const obstacles = [...gameState.resources, ...gameState.campfires];
-            for (let obs of obstacles) {
-                const dx = x - obs.x;
-                const dy = y - obs.y;
-                const jarak = Math.sqrt(dx * dx + dy * dy);
-                if (jarak < 15) {
-                    return true; // Terlalu dekat, dilarang lewat
-                }
-            }
-            return false;
+    const obstacles = [...gameState.resources, ...gameState.campfires, ...gameState.walls];
+    for (let obs of obstacles) {
+        const dx = x - obs.x;
+        const dy = y - obs.y;
+        const jarak = Math.sqrt(dx * dx + dy * dy);
+        if (jarak < 15) {
+            return true;
         }
+    }
+    return false;
+}
 
         // ==========================================
         // CLASS DEFINITIONS (CETAKAN OBJEK)
@@ -122,15 +127,18 @@
         }
 
         class Player extends Entity {
-            constructor() {
-                super(worldWidth / 2, worldHeight / 2);
-                this.size = 20;
-                this.kecepatan = 200;
-                this.lastDirX = 0;
-                this.lastDirY = 1;
-                this.keys = {};
-                this.hurtUntil = 0; // Timestamp sampai kapan efek merah
-            }
+           constructor() {
+    super(worldWidth / 2, worldHeight / 2);
+    this.size = 20;
+    this.kecepatan = 150;
+    this.lastDirX = 0;
+    this.lastDirY = 1;
+    this.keys = {};
+    this.hurtUntil = 0;
+    this.isMoving = false;
+    this.walkTime = 0;
+    this.slowUntil = 0;
+}
 
             update(deltaTime) {
                 let dx = 0;
@@ -141,27 +149,40 @@
                 if (this.keys['a'] || this.keys['ArrowLeft']) dx -= 1;
                 if (this.keys['d'] || this.keys['ArrowRight']) dx += 1;
 
-                if (dx !== 0 || dy !== 0) {
-                    const length = Math.sqrt(dx * dx + dy * dy);
-                    dx /= length;
-                    dy /= length;
+                this.isMoving = dx !== 0 || dy !== 0;
 
-                    this.lastDirX = dx;
-                    this.lastDirY = dy;
+if (this.isMoving) {
+    const length = Math.sqrt(dx * dx + dy * dy);
+    dx /= length;
+    dy /= length;
 
-                    const newX = this.x + dx * this.kecepatan * deltaTime;
-                    const newY = this.y + dy * this.kecepatan * deltaTime;
+    this.lastDirX = dx;
+    this.lastDirY = dy;
 
-                    // Coba gerakkan sumbu X dulu
-                    if (isInsidePulau(newX, this.y) && !isBlocked(newX, this.y)) {
-                        this.x = newX;
-                    }
+    // Update waktu untuk animasi berjalan
+    this.walkTime += deltaTime;
 
-                    // Lalu coba sumbu Y
-                    if (isInsidePulau(this.x, newY) && !isBlocked(this.x, newY)) {
-                        this.y = newY;
-                    }
-                }
+   let kecepatanSekarang = this.kecepatan;
+if (performance.now() < this.slowUntil) {
+    kecepatanSekarang = this.kecepatan * 0.5; // 50% lebih lambat
+}
+
+const newX = this.x + dx * kecepatanSekarang * deltaTime;
+const newY = this.y + dy * kecepatanSekarang * deltaTime;
+
+    // Coba gerakkan sumbu X dulu
+    if (isInsidePulau(newX, this.y) && !isBlocked(newX, this.y)) {
+        this.x = newX;
+    }
+
+    // Lalu coba sumbu Y
+    if (isInsidePulau(this.x, newY) && !isBlocked(this.x, newY)) {
+        this.y = newY;
+    }
+} else {
+    // Reset animasi saat diam
+    this.walkTime = 0;
+}
             }
 
             draw() {
@@ -190,18 +211,41 @@
                 ctx.fill();
                 ctx.stroke();
 
-                // Tangan kiri
-                ctx.fillStyle = warnaKulit;
-                ctx.beginPath();
-                ctx.arc(x - 8, y - 2, 3, 0, Math.PI * 2);
-                ctx.fill();
-                ctx.stroke();
+                // ===== ANIMASI LENGAN =====
+const sway = this.isMoving ? Math.sin(this.walkTime * 12) * 2 : 0;
+const isHorizontal = Math.abs(this.lastDirX) > Math.abs(this.lastDirY);
 
-                // Tangan kanan
-                ctx.beginPath();
-                ctx.arc(x + 8, y - 2, 3, 0, Math.PI * 2);
-                ctx.fill();
-                ctx.stroke();
+if (this.isMoving && isHorizontal) {
+    // Saat bergerak horizontal, hanya satu lengan terlihat (di sisi arah gerak)
+    const side = this.lastDirX > 0 ? 1 : -1; // 1 = kanan, -1 = kiri
+    const handX = x + side * 6; // agak ke tengah
+    const handY = y - 2 + sway;
+
+    ctx.fillStyle = warnaKulit;
+    ctx.beginPath();
+    ctx.arc(handX, handY, 3, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+} else {
+    // Saat diam atau bergerak vertikal, gambar dua lengan
+    const leftHandX = x - 8;
+    const leftHandY = y - 2 + sway;
+    const rightHandX = x + 8;
+    const rightHandY = y - 2 - sway;
+
+    // Tangan kiri
+    ctx.fillStyle = warnaKulit;
+    ctx.beginPath();
+    ctx.arc(leftHandX, leftHandY, 3, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+
+    // Tangan kanan
+    ctx.beginPath();
+    ctx.arc(rightHandX, rightHandY, 3, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+}
                 
                 // Mata
 const mataX = x + this.lastDirX * 2;
@@ -278,14 +322,16 @@ ctx.fillRect(x - 1.5, y - 9, 3, 1);
     }
 }
 
-        class Enemy extends Entity {
-            constructor(x, y) {
-                super(x, y);
-                this.hp = 20;
-                this.cooldown = 0;
-                this.speed = 1.5;
-                this.targetType = null;
-            }
+       class Enemy extends Entity {
+    constructor(x, y) {
+        super(x, y);
+        this.hp = 20;
+        this.cooldown = 0;
+        this.speed = 1.5;
+        this.targetType = null;
+        this.arahX = Math.random() * 2 - 1; // arah gerak idle
+        this.arahY = Math.random() * 2 - 1;
+    }
 
             update(gameState) {
                 if (gameState.gameOver) return;
@@ -320,21 +366,38 @@ ctx.fillRect(x - 1.5, y - 9, 3, 1);
                     targetY = target.y;
                     speed = 1.8;
                 } else {
-                    if (!gameState.malam && jarakKePemain < 120) {
-                        const arahX = (this.x - gameState.player.x) / jarakKePemain;
-                        const arahY = (this.y - gameState.player.y) / jarakKePemain;
-                        
-                        const newX = this.x + arahX * 0.5;
-                        const newY = this.y + arahY * 0.5;
-                        
-                        if (isInsidePulau(newX, this.y) && !isBlocked(newX, this.y)) {
-                            this.x = newX;
-                        }
-                        if (isInsidePulau(this.x, newY) && !isBlocked(this.x, newY)) {
-                            this.y = newY;
-                        }
-                    }
-                }
+    if (!gameState.malam && jarakKePemain < 120) {
+        // Menghindar dari pemain saat siang
+        const arahX = (this.x - gameState.player.x) / jarakKePemain;
+        const arahY = (this.y - gameState.player.y) / jarakKePemain;
+        
+        const newX = this.x + arahX * 0.5;
+        const newY = this.y + arahY * 0.5;
+        
+        if (isInsidePulau(newX, this.y) && !isBlocked(newX, this.y)) {
+            this.x = newX;
+        }
+        if (isInsidePulau(this.x, newY) && !isBlocked(this.x, newY)) {
+            this.y = newY;
+        }
+    } else {
+        // Idle movement saat siang tanpa target dan tidak dekat pemain
+        if (!gameState.malam) {
+            const oldIdleX = this.x;
+            const oldIdleY = this.y;
+            
+            this.x += this.arahX * 0.3;
+            this.y += this.arahY * 0.3;
+            
+            if (!isInsidePulau(this.x, this.y) || isBlocked(this.x, this.y)) {
+                // Kembalikan posisi dan berbalik arah ke dalam pulau
+                this.x = oldIdleX;
+                this.y = oldIdleY;
+                this.ubahArahKeDalam();
+            }
+        }
+    }
+}
 
                 if (targetX !== null && targetY !== null) {
                     const jarakKeTarget = Math.sqrt((targetX - this.x) ** 2 + (targetY - this.y) ** 2);
@@ -357,10 +420,11 @@ ctx.fillRect(x - 1.5, y - 9, 3, 1);
                     }
                 }
 
-                if (!isInsidePulau(this.x, this.y)) {
-                    this.x = oldX;
-                    this.y = oldY;
-                }
+               if (!isInsidePulau(this.x, this.y)) {
+    this.x = oldX;
+    this.y = oldY;
+    this.ubahArahKeDalam(); // berbalik arah ke dalam pulau
+}
 
                 if (kelinciTerdekat !== null && jarakKeKelinci < 15) {
                     gameState.kelincis.splice(kelinciTerdekat, 1);
@@ -372,27 +436,39 @@ ctx.fillRect(x - 1.5, y - 9, 3, 1);
                 const jarakSekarang = Math.sqrt((gameState.player.x - this.x) ** 2 + (gameState.player.y - this.y) ** 2);
 
                 if (gameState.malam && jarakSekarang < 25 && this.cooldown <= 0) {
-                    gameState.kesehatan -= 5;
-                    if (gameState.kesehatan < 0) gameState.kesehatan = 0;
-                    gameState.pesan = '🐺 Kamu digigit serigala!';
-                    this.cooldown = 10;
-                    
-                    // Efek terluka dan layar bergetar
-                    gameState.screenShakeUntil = performance.now() + 150;
-                    if (gameState.player) {
-                        gameState.player.hurtUntil = performance.now() + 200;
-                    }
-                    
-                    if (gameState.kesehatan === 0) {
-                        gameState.gameOver = true;
-                        gameState.pesan = 'Kamu mati diserang serigala...';
-                    }
-                }
+    gameState.kesehatan -= 5;
+    if (gameState.kesehatan < 0) gameState.kesehatan = 0;
+    gameState.pesan = '🐺 Kamu digigit serigala!';
+    this.cooldown = 10;
+    
+    // Efek terluka dan layar bergetar
+    gameState.screenShakeUntil = performance.now() + 150;
+    if (gameState.player) {
+        gameState.player.hurtUntil = performance.now() + 200;
+        gameState.player.slowUntil = performance.now() + 3000; // <-- di sini
+    }
+    
+    if (gameState.kesehatan === 0) {
+        gameState.gameOver = true;
+        gameState.pesan = 'Kamu mati diserang serigala...';
+    }
+}
 
                 if (this.cooldown > 0) {
                     this.cooldown--;
                 }
             }
+            
+            ubahArahKeDalam() {
+    const pusatX = worldWidth / 2;
+    const pusatY = worldHeight / 2;
+    const dx = pusatX - this.x;
+    const dy = pusatY - this.y;
+    const jarak = Math.sqrt(dx * dx + dy * dy) || 1;
+    const sudut = Math.atan2(dy, dx) + (Math.random() - 0.5) * Math.PI / 3; // variasi ±60 derajat
+    this.arahX = Math.cos(sudut);
+    this.arahY = Math.sin(sudut);
+}
 
             draw() {
                 const x = this.x;
@@ -440,31 +516,52 @@ ctx.fillRect(x - 1.5, y - 9, 3, 1);
             }
 
             update(gameState) {
-                if (gameState.gameOver) return;
+    if (gameState.gameOver) return;
 
-                const oldX = this.x;
-                const oldY = this.y;
+    this.timer++;
+    if (this.timer > 50) {
+        this.ubahArahAcak();
+        this.timer = 0;
+    }
 
-                this.timer++;
-                if (this.timer > 50) {
-                    const sudut = Math.random() * Math.PI * 2;
-                    this.arahX = Math.cos(sudut);
-                    this.arahY = Math.sin(sudut);
-                    this.timer = 0;
-                }
+    const speed = 0.8;
 
-                const speed = 0.8;
-                this.x += this.arahX * speed;
-                this.y += this.arahY * speed;
+    // Coba gerakkan sumbu X dulu
+    const newX = this.x + this.arahX * speed;
+if (isInsidePulau(newX, this.y) && !isBlocked(newX, this.y)) {
+    this.x = newX;
+} else {
+    this.ubahArahAcak(true); // berbalik menjauhi laut
+}
 
-                if (!isInsidePulau(this.x, this.y)) {
-                    this.x = oldX;
-                    this.y = oldY;
-                    const sudut = Math.random() * Math.PI * 2;
-                    this.arahX = Math.cos(sudut);
-                    this.arahY = Math.sin(sudut);
-                }
-            }
+const newY = this.y + this.arahY * speed;
+if (isInsidePulau(this.x, newY) && !isBlocked(this.x, newY)) {
+    this.y = newY;
+} else {
+    this.ubahArahAcak(true);
+}
+}
+
+// Tambahkan method ini di dalam class Kelinci
+ubahArahAcak(jauhiLaut = false) {
+    if (jauhiLaut) {
+        // Arah ke pusat pulau + variasi acak
+        const pusatX = worldWidth / 2;
+        const pusatY = worldHeight / 2;
+        const dx = pusatX - this.x;
+        const dy = pusatY - this.y;
+        const jarak = Math.sqrt(dx * dx + dy * dy) || 1;
+        const sudutDasar = Math.atan2(dy, dx);
+        const sudut = sudutDasar + (Math.random() - 0.5) * Math.PI / 2; // variasi ±45 derajat
+        this.arahX = Math.cos(sudut);
+        this.arahY = Math.sin(sudut);
+    } else {
+        const sudut = Math.random() * Math.PI * 2;
+        this.arahX = Math.cos(sudut);
+        this.arahY = Math.sin(sudut);
+    }
+    this.timer = 0;
+}
 
             draw() {
                 const x = this.x;
@@ -503,20 +600,62 @@ ctx.fillRect(x - 1.5, y - 9, 3, 1);
         }
 
         class Campfire extends Entity {
-            draw() {
-                ctx.fillStyle = '#8B4513';
-                ctx.fillRect(this.x - 8, this.y, 16, 4);
-                ctx.fillRect(this.x - 4, this.y - 6, 16, 4);
-                ctx.fillStyle = '#FF4500';
-                ctx.beginPath();
-                ctx.arc(this.x, this.y - 4, 6, 0, Math.PI * 2);
-                ctx.fill();
-                ctx.fillStyle = '#FFD700';
-                ctx.beginPath();
-                ctx.arc(this.x, this.y - 5, 3, 0, Math.PI * 2);
-                ctx.fill();
-            }
+              draw() {
+    // Outline hitam
+    ctx.strokeStyle = '#111';
+    ctx.lineWidth = 1.5;
+
+    // Kayu bakar
+    ctx.fillStyle = '#8B4513';
+    ctx.fillRect(this.x - 8, this.y, 16, 4);
+    ctx.strokeRect(this.x - 8, this.y, 16, 4);
+    ctx.fillRect(this.x - 4, this.y - 6, 16, 4);
+    ctx.strokeRect(this.x - 4, this.y - 6, 16, 4);
+
+    // Api
+    ctx.fillStyle = '#FF4500';
+    ctx.beginPath();
+    ctx.arc(this.x, this.y - 4, 6, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+
+    // Inti api
+    ctx.fillStyle = '#FFD700';
+    ctx.beginPath();
+    ctx.arc(this.x, this.y - 5, 3, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+}
         }
+        
+        class Wall extends Entity {
+    draw() {
+        // Outline hitam
+        ctx.strokeStyle = '#111';
+        ctx.lineWidth = 2;
+
+        // Blok dinding (kotak)
+        ctx.fillStyle = '#A0522D';
+        ctx.fillRect(this.x - 10, this.y - 10, 20, 20);
+        ctx.strokeRect(this.x - 10, this.y - 10, 20, 20);
+
+        // Garis papan
+        ctx.strokeStyle = '#8B4513';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(this.x - 10, this.y - 3);
+        ctx.lineTo(this.x + 10, this.y - 3);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(this.x - 10, this.y + 3);
+        ctx.lineTo(this.x + 10, this.y + 3);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(this.x, this.y - 10);
+        ctx.lineTo(this.x, this.y + 10);
+        ctx.stroke();
+    }
+}
 
         // ==========================================
         // GAME STATE (Pusat Data Game)
@@ -528,6 +667,7 @@ ctx.fillRect(x - 1.5, y - 9, 3, 1);
             enemies: [],
             kelincis: [],
             campfires: [],
+            walls: [],
             respawnList: [],
 
             jumlahKayu: 0,
@@ -564,7 +704,8 @@ ctx.fillRect(x - 1.5, y - 9, 3, 1);
                 pohon: 120000,
                 batu: 120000,
                 semak: 90000,
-                kelinci: 90000
+                kelinci: 90000,
+                serigala: 180000
             },
 
             jadwalkanRespawn(tipe) {
@@ -575,24 +716,26 @@ ctx.fillRect(x - 1.5, y - 9, 3, 1);
             },
 
             cekRespawn() {
-                const sekarang = Date.now();
-                for (let i = this.respawnList.length - 1; i >= 0; i--) {
-                    const item = this.respawnList[i];
-                    if (sekarang >= item.waktu) {
-                        const pos = randomPosisiDalamPulau();
-                        if (item.tipe === 'pohon') {
-                            this.resources.push(new Resource(pos.x, pos.y, 'pohon'));
-                        } else if (item.tipe === 'batu') {
-                            this.resources.push(new Resource(pos.x, pos.y, 'batu'));
-                        } else if (item.tipe === 'semak') {
-                            this.resources.push(new Resource(pos.x, pos.y, 'semak'));
-                        } else if (item.tipe === 'kelinci') {
-                            this.kelincis.push(new Kelinci(pos.x, pos.y));
-                        }
-                        this.respawnList.splice(i, 1);
-                    }
-                }
-            },
+    const sekarang = Date.now();
+    for (let i = this.respawnList.length - 1; i >= 0; i--) {
+        const item = this.respawnList[i];
+        if (sekarang >= item.waktu) {
+            const pos = randomPosisiDalamPulau();
+            if (item.tipe === 'pohon') {
+                this.resources.push(new Resource(pos.x, pos.y, 'pohon'));
+            } else if (item.tipe === 'batu') {
+                this.resources.push(new Resource(pos.x, pos.y, 'batu'));
+            } else if (item.tipe === 'semak') {
+                this.resources.push(new Resource(pos.x, pos.y, 'semak'));
+            } else if (item.tipe === 'kelinci') {
+                this.kelincis.push(new Kelinci(pos.x, pos.y));
+            } else if (item.tipe === 'serigala') {
+                this.enemies.push(new Enemy(pos.x, pos.y));
+            }
+            this.respawnList.splice(i, 1);
+        }
+    }
+},
 
             simpanGame() {
                 try {
@@ -605,6 +748,7 @@ ctx.fillRect(x - 1.5, y - 9, 3, 1);
                         jumlahDagingMentah: this.jumlahDagingMentah,
                         jumlahDagingMasak: this.jumlahDagingMasak,
                         jumlahKulit: this.jumlahKulit,
+                        jumlahMedkit: this.jumlahMedkit,
                         punyaKapak: this.punyaKapak,
                         pesan: this.pesan,
                         xp: this.xp,
@@ -618,6 +762,7 @@ ctx.fillRect(x - 1.5, y - 9, 3, 1);
                         enemies: this.enemies.map(e => ({ x: e.x, y: e.y, hp: e.hp, cooldown: e.cooldown })),
                         kelincis: this.kelincis.map(k => ({ x: k.x, y: k.y, arahX: k.arahX, arahY: k.arahY, timer: k.timer })),
                         campfires: this.campfires.map(c => ({ x: c.x, y: c.y })),
+                        walls: this.walls.map(w => ({ x: w.x, y: w.y })),
                         respawnList: this.respawnList.map(r => ({ tipe: r.tipe, waktu: r.waktu }))
                     };
                     localStorage.setItem('pulauSurvivalSave', JSON.stringify(data));
@@ -649,6 +794,7 @@ ctx.fillRect(x - 1.5, y - 9, 3, 1);
                     this.jumlahDagingMentah = data.jumlahDagingMentah;
                     this.jumlahDagingMasak = data.jumlahDagingMasak;
                     this.jumlahKulit = data.jumlahKulit;
+                    this.jumlahMedkit = data.jumlahMedkit;
                     this.punyaKapak = data.punyaKapak;
                     this.pesan = '📂 Game dimuat!';
                     this.xp = data.xp;
@@ -675,6 +821,7 @@ ctx.fillRect(x - 1.5, y - 9, 3, 1);
                         return kelinci;
                     });
                     this.campfires = data.campfires.map(c => new Campfire(c.x, c.y));
+                    this.walls = data.walls.map(w => new Wall(w.x, w.y));
                     this.respawnList = data.respawnList;
 
                     this.lastUpdateTime = performance.now();
@@ -696,12 +843,13 @@ ctx.fillRect(x - 1.5, y - 9, 3, 1);
                 this.enemies = [];
                 this.kelincis = [];
                 this.campfires = [];
+                this.walls = [];
                 this.respawnList = [];
 
                 // Jumlah awal acak
-                const jumlahPohonAwal = Math.floor(Math.random() * 6) + 12;
-                const jumlahBatuAwal = Math.floor(Math.random() * 5) + 8;
-                const jumlahSemakAwal = Math.floor(Math.random() * 6) + 10;
+                const jumlahPohonAwal = Math.floor(Math.random() * 8) + 20;
+                const jumlahBatuAwal = Math.floor(Math.random() * 6) + 15;
+                const jumlahSemakAwal = Math.floor(Math.random() * 8) + 15;
 
                 for (let i = 0; i < jumlahPohonAwal; i++) {
                     const pos = randomPosisiDalamPulau();
@@ -717,13 +865,13 @@ ctx.fillRect(x - 1.5, y - 9, 3, 1);
                 }
 
                 // Enemy
-                for (let i = 0; i < 4; i++) {
+                for (let i = 0; i < 7; i++) {
                     const pos = randomPosisiDalamPulau();
                     this.enemies.push(new Enemy(pos.x, pos.y));
                 }
 
                 // Kelinci
-                for (let i = 0; i < 5; i++) {
+                for (let i = 0; i < 9; i++) {
                     const pos = randomPosisiDalamPulau();
                     this.kelincis.push(new Kelinci(pos.x, pos.y));
                 }
@@ -734,6 +882,7 @@ ctx.fillRect(x - 1.5, y - 9, 3, 1);
                 this.jumlahDagingMentah = 0;
                 this.jumlahDagingMasak = 0;
                 this.jumlahKulit = 0;
+                this.jumlahMedkit = 0;
                 this.punyaKapak = false;
                 this.pesan = 'Kamu hidup kembali!';
                 this.xp = 0;
@@ -813,6 +962,19 @@ ctx.fillRect(x - 1.5, y - 9, 3, 1);
             // Hint tombol menu
             ctx.fillStyle = '#FFFFFF';
             ctx.fillText('Tab: Menu', 10, 140);
+            
+            // FPS (pojok kanan atas) dengan warna dinamis
+let warnaFPS = '#00FF00'; // hijau (performa bagus)
+if (fps < 30) {
+    warnaFPS = '#FF0000'; // merah (berat)
+} else if (fps < 50) {
+    warnaFPS = '#FFFF00'; // kuning (sedang)
+}
+
+ctx.fillStyle = warnaFPS;
+ctx.font = 'bold 14px Arial';
+ctx.fillText('FPS: ' + Math.round(fps), canvas.width - 80, 20);
+ctx.font = '16px Arial, sans-serif'; // kembalikan font
 
             // ===== MENU INVENTORY / CRAFTING =====
             if (gameState.showMenu) {
@@ -833,7 +995,8 @@ ctx.fillRect(x - 1.5, y - 9, 3, 1);
                     `🥩 Daging Mentah: ${gameState.jumlahDagingMentah}`,
                     `🍗 Daging Masak: ${gameState.jumlahDagingMasak}`,
                     `🧶 Kulit: ${gameState.jumlahKulit}`,
-                    `🪓 Kapak: ${gameState.punyaKapak ? 'Ya' : 'Tidak'}`,
+`💊 Medkit: ${gameState.jumlahMedkit}`,
+`🪓 Kapak: ${gameState.punyaKapak ? 'Ya' : 'Tidak'}`,
                     `🔥 Campfire: ${gameState.campfires.length}`,
                     `⭐ Level: ${gameState.level} - XP: ${gameState.xp}/${gameState.xpPerLevel}`
                 ];
@@ -850,12 +1013,15 @@ ctx.fillRect(x - 1.5, y - 9, 3, 1);
                 y += 22;
 
                 const resep = [
-                    'Kapak Batu: 4 Kayu + 2 Batu (tekan C)',
-                    'Campfire: 5 Kayu (tekan B)',
-                    'Masak Daging: dekat campfire (tekan R)',
-                    'Makan Berry: Q | Daging: T',
-                    'Interaksi: E / SPASI'
-                ];
+    'Kapak Batu: 4 Kayu + 2 Batu (tekan C)',
+    'Campfire: 5 Kayu (tekan B)',
+    'Dinding: 2 Kayu + 1 Batu (tekan N)',
+    'Masak Daging: dekat campfire (tekan R)',
+    'Medkit: 3 Berry + 2 Kulit (tekan M)',
+    'Pakai Medkit: H',
+    'Makan Berry: Q | Daging: T',
+    'Interaksi: E / SPASI'
+];
 
                 resep.forEach(text => {
                     ctx.fillStyle = '#FFFFFF';
@@ -906,10 +1072,11 @@ ctx.fillRect(x - 1.5, y - 9, 3, 1);
             gambarPulau();
 
             gameState.resources.forEach(r => r.draw());
-            gameState.campfires.forEach(c => c.draw());
-            gameState.kelincis.forEach(k => k.draw());
-            gameState.enemies.forEach(e => e.draw());
-            gameState.player.draw();
+gameState.campfires.forEach(c => c.draw());
+gameState.walls.forEach(w => w.draw());
+gameState.kelincis.forEach(k => k.draw());
+gameState.enemies.forEach(e => e.draw());
+gameState.player.draw();
 
             ctx.restore();
 
@@ -991,16 +1158,54 @@ ctx.fillRect(x - 1.5, y - 9, 3, 1);
             }
         }
 
-        function buatCampfire() {
-            if (gameState.jumlahKayu >= 5) {
-                gameState.jumlahKayu -= 5;
-                gameState.campfires.push(new Campfire(gameState.player.x, gameState.player.y));
-                gameState.pesan = '🔥 Campfire diletakkan di posisimu!';
-                tambahXP(15);
-            } else {
-                gameState.pesan = 'Butuh 5 kayu untuk membuat campfire!';
-            }
-        }
+       function buatCampfire() {
+    if (gameState.jumlahKayu < 5) {
+        gameState.pesan = 'Butuh 5 kayu untuk membuat campfire!';
+        return;
+    }
+
+    const player = gameState.player;
+    const jarak = 30;
+    const arahX = player.lastDirX || 0;
+    const arahY = player.lastDirY || 1;
+
+    const newX = player.x + arahX * jarak;
+    const newY = player.y + arahY * jarak;
+
+    if (isInsidePulau(newX, newY) && !isBlocked(newX, newY)) {
+        gameState.jumlahKayu -= 5;
+        gameState.campfires.push(new Campfire(newX, newY));
+        gameState.pesan = '🔥 Campfire diletakkan di depanmu!';
+        tambahXP(15);
+    } else {
+        gameState.pesan = 'Tidak bisa menaruh campfire di sana!';
+    }
+}
+
+function buatDinding() {
+    if (gameState.jumlahKayu < 2 || gameState.jumlahBatu < 1) {
+        gameState.pesan = 'Bahan tidak cukup! Butuh 2 kayu dan 1 batu.';
+        return;
+    }
+
+    const player = gameState.player;
+    const jarak = 30;
+    const arahX = player.lastDirX || 0;
+    const arahY = player.lastDirY || 1;
+
+    const newX = player.x + arahX * jarak;
+    const newY = player.y + arahY * jarak;
+
+    if (isInsidePulau(newX, newY) && !isBlocked(newX, newY)) {
+        gameState.jumlahKayu -= 2;
+        gameState.jumlahBatu -= 1;
+        gameState.walls.push(new Wall(newX, newY));
+        gameState.pesan = '🧱 Dinding dibangun!';
+        tambahXP(10);
+    } else {
+        gameState.pesan = 'Tidak bisa membangun dinding di sana!';
+    }
+}
 
         function masakDaging() {
             let dekatCampfire = false;
@@ -1012,6 +1217,36 @@ ctx.fillRect(x - 1.5, y - 9, 3, 1);
                     break;
                 }
             }
+            
+            function buatMedkit() {
+    if (gameState.jumlahBerry >= 3 && gameState.jumlahKulit >= 2) {
+        gameState.jumlahBerry -= 3;
+        gameState.jumlahKulit -= 2;
+        gameState.jumlahMedkit++;
+        gameState.pesan = '💊 Berhasil membuat Medkit!';
+        tambahXP(10);
+    } else {
+        gameState.pesan = 'Bahan tidak cukup! Butuh 3 berry dan 2 kulit.';
+    }
+}
+
+function gunakanMedkit() {
+    if (gameState.jumlahMedkit <= 0) {
+        gameState.pesan = 'Kamu tidak punya Medkit!';
+        return;
+    }
+
+    if (gameState.kesehatan >= 100) {
+        gameState.pesan = 'Darahmu masih penuh!';
+        return;
+    }
+
+    gameState.jumlahMedkit--;
+    gameState.kesehatan += 50;
+    if (gameState.kesehatan > 100) gameState.kesehatan = 100;
+    gameState.pesan = '💊 Kamu menggunakan Medkit (+50 Health)';
+}
+
 
             if (!dekatCampfire) {
                 gameState.pesan = 'Kamu harus dekat dengan campfire untuk memasak!';
@@ -1054,17 +1289,18 @@ ctx.fillRect(x - 1.5, y - 9, 3, 1);
                 }
             }
 
-            if (musuhTerdekat !== null && jarakMusuh < 50) {
-                const damage = 10 + (gameState.level - 1) * 5;
-                gameState.enemies[musuhTerdekat].hp -= damage;
-                gameState.pesan = '⚔️ Kamu menyerang serigala! (-' + damage + ' HP)';
-                if (gameState.enemies[musuhTerdekat].hp <= 0) {
-                    gameState.pesan = '💀 Serigala mati!';
-                    gameState.enemies.splice(musuhTerdekat, 1);
-                    tambahXP(20);
-                }
-                return;
-            }
+           if (musuhTerdekat !== null && jarakMusuh < 50) {
+    const damage = 10 + (gameState.level - 1) * 5;
+    gameState.enemies[musuhTerdekat].hp -= damage;
+    gameState.pesan = '⚔️ Kamu menyerang serigala! (-' + damage + ' HP)';
+    if (gameState.enemies[musuhTerdekat].hp <= 0) {
+        gameState.pesan = '💀 Serigala mati!';
+        gameState.enemies.splice(musuhTerdekat, 1);
+        gameState.jadwalkanRespawn('serigala');   // <-- tambahkan ini
+        tambahXP(20);
+    }
+    return;
+}
 
             // ===== 2. Cari kelinci terdekat (jarak buru 30) =====
             let kelinciTerdekat = null;
@@ -1183,6 +1419,18 @@ ctx.fillRect(x - 1.5, y - 9, 3, 1);
             if (event.key === 'b' || event.key === 'B') {
                 buatCampfire();
             }
+            
+            if (event.key === 'm' || event.key === 'M') {
+    buatMedkit();
+}
+
+if (event.key === 'h' || event.key === 'H') {
+    gunakanMedkit();
+}
+
+            if (event.key === 'n' || event.key === 'N') {
+    buatDinding();
+}
 
             if (event.key === 'p' || event.key === 'P') {
                 gameState.simpanGame();
@@ -1210,6 +1458,15 @@ ctx.fillRect(x - 1.5, y - 9, 3, 1);
                 // Delta time (waktu jeda antar frame)
                 const deltaTime = Math.min((now - gameState.lastFrameTime) / 1000, 0.1);
                 gameState.lastFrameTime = now;
+                
+                // Hitung FPS
+frameCount++;
+fpsTime += deltaTime;
+if (fpsTime >= 0.5) {
+    fps = frameCount / fpsTime;
+    frameCount = 0;
+    fpsTime = 0;
+}
 
                 // Update pergerakan pemain
                 gameState.player.keys = gameState.keys;
