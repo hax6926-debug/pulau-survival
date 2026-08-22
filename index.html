@@ -190,6 +190,7 @@
         const ITEM_DEFINITIONS = {
             kayu: { nama: 'Kayu', emoji: '🪵' },
             batu: { nama: 'Batu', emoji: '🪨' },
+            ranting: { nama: 'Ranting', emoji: '🥢' },
             berry: { nama: 'Berry', emoji: '🫐' },
             daging_mentah: { nama: 'Daging Mentah', emoji: '🥩' },
             daging_masak: { nama: 'Daging Masak', emoji: '🍗' },
@@ -199,7 +200,8 @@
             campfire: { nama: 'Campfire', emoji: '🔥' },
             dinding: { nama: 'Dinding', emoji: '🧱' },
             crafting_table: { nama: 'Meja Kerja', emoji: '🪑' },
-            pedang_kayu: { nama: 'Pedang Kayu', emoji: '🗡️' }
+            pedang_kayu: { nama: 'Pedang Kayu', emoji: '🗡️' },
+            pedang_batu: { nama: 'Pedang Batu', emoji: '⚔️' }
         };
 
         const MAX_STACK = 64;
@@ -1054,6 +1056,11 @@
                     if (activeSlot.id === 'kapak' && gameState.punyaKapak) {
                         info = `Dipilih: 🪓 Kapak: ${gameState.kapakDurability}/${gameState.kapakMaxDurability}`;
                     }
+                    if (activeSlot.id === 'pedang_kayu') {
+                        info += ' (⚔️ Damage 15)';
+                    } else if (activeSlot.id === 'pedang_batu') {
+                        info += ' (⚔️ Damage 25)';
+                    }
                     ctx.fillStyle = '#FFFFFF';
                     ctx.font = '14px Arial';
                     ctx.fillText(info, startX, startY - 10);
@@ -1289,19 +1296,28 @@
             
             const buttonRadius = 30, gap = 80;
             const startBtnX = screenW - buttonRadius - 20;
-            const btn1Y = screenH - buttonRadius - 20;
-            const btn2Y = btn1Y - gap;
+            const btn1Y = screenH - buttonRadius - 20;      // tombol interaksi (paling bawah)
+            const btn2Y = btn1Y - gap;                     // tombol menu (tengah)
+            const btn3Y = btn2Y - gap;                     // tombol hancurkan (paling atas)
             
+            // Tombol Interaksi (✋)
             ctx.fillStyle = 'rgba(255,200,50,0.6)';
             ctx.beginPath(); ctx.arc(startBtnX, btn1Y, buttonRadius, 0, Math.PI * 2); ctx.fill();
             ctx.fillStyle = '#FFFFFF';
             ctx.font = '24px Arial';
             ctx.fillText('✋', startBtnX - 12, btn1Y + 8);
             
+            // Tombol Menu (🎒)
             ctx.fillStyle = 'rgba(80,180,255,0.6)';
             ctx.beginPath(); ctx.arc(startBtnX, btn2Y, buttonRadius, 0, Math.PI * 2); ctx.fill();
             ctx.fillStyle = '#FFFFFF';
             ctx.fillText('🎒', startBtnX - 12, btn2Y + 8);
+            
+            // Tombol Hancurkan (🔨)
+            ctx.fillStyle = 'rgba(255,80,80,0.7)';
+            ctx.beginPath(); ctx.arc(startBtnX, btn3Y, buttonRadius, 0, Math.PI * 2); ctx.fill();
+            ctx.fillStyle = '#FFFFFF';
+            ctx.fillText('🔨', startBtnX - 12, btn3Y + 8);
         }
 
         function updateKeysFromJoystick() {
@@ -1439,6 +1455,17 @@
             return total;
         }
 
+        // ===== FUNGSI BARU: hitungItem =====
+        function hitungItem(slots) {
+            const counts = {};
+            for (const slot of slots) {
+                if (slot) {
+                    counts[slot.id] = (counts[slot.id] || 0) + slot.jumlah;
+                }
+            }
+            return counts;
+        }
+
         // ===== CRAFTING RECIPES =====
         function arraysEqual(a, b) {
             if (a.length !== b.length) return false;
@@ -1451,16 +1478,39 @@
         function matchRecipe3x3() {
             const slots = gameState.craftingTableSlots;
             const ids = slots.map(s => s ? s.id : null);
+            const counts = hitungItem(slots);
+            const totalItems = slots.reduce((sum, slot) => sum + (slot ? slot.jumlah : 0), 0);
 
-            const recipeSword = [
-                'kayu', 'kayu', 'kayu',
-                'kayu', 'kayu', 'kayu',
-                'kayu', 'kayu', 'kayu'
+            // === Resep Ranting: 1 Kayu → 1 Ranting ===
+            if (counts['kayu'] === 1 && totalItems === 1) {
+                return { id: 'ranting', jumlah: 1 };
+            }
+
+            // === RESEP PEDANG KAYU (2 Kayu + 1 Ranting, pola Minecraft) ===
+            // Kolom kiri
+            const recipeSwordLeft = [
+                'kayu', null, null,
+                'kayu', null, null,
+                'ranting', null, null
             ];
-            if (arraysEqual(ids, recipeSword)) {
+            // Kolom tengah
+            const recipeSwordMiddle = [
+                null, 'kayu', null,
+                null, 'kayu', null,
+                null, 'ranting', null
+            ];
+            // Kolom kanan
+            const recipeSwordRight = [
+                null, null, 'kayu',
+                null, null, 'kayu',
+                null, null, 'ranting'
+            ];
+
+            if (arraysEqual(ids, recipeSwordLeft) || arraysEqual(ids, recipeSwordMiddle) || arraysEqual(ids, recipeSwordRight)) {
                 return { id: 'pedang_kayu', jumlah: 1 };
             }
 
+            // Resep Dinding
             const recipeWall = [
                 'kayu', 'kayu', 'kayu',
                 'kayu', 'kayu', 'kayu',
@@ -1468,6 +1518,36 @@
             ];
             if (arraysEqual(ids, recipeWall)) {
                 return { id: 'dinding', jumlah: 1 };
+            }
+
+            // Resep Kapak Batu (3 Batu + 2 Ranting, pola Minecraft)
+            const recipeAxe = [
+                'batu', 'batu', 'batu',
+                'batu', 'ranting', null,
+                null, 'ranting', null
+            ];
+            if (arraysEqual(ids, recipeAxe)) {
+                return { id: 'kapak', jumlah: 1 };
+            }
+
+            // Resep Pedang Batu (2 Batu + 1 Ranting, pola Minecraft)
+            const recipeSwordBatu = [
+                null, 'batu', null,
+                null, 'batu', null,
+                null, 'ranting', null
+            ];
+            if (arraysEqual(ids, recipeSwordBatu)) {
+                return { id: 'pedang_batu', jumlah: 1 };
+            }
+
+            // Resep Medkit (1 Kulit + 1 Berry, posisi bebas)
+            if (counts['kulit'] === 1 && counts['berry'] === 1 && totalItems === 2) {
+                return { id: 'medkit', jumlah: 1 };
+            }
+
+            // Resep Campfire (2 Kayu + 1 Batu, posisi bebas)
+            if (counts['kayu'] === 2 && counts['batu'] === 1 && totalItems === 3) {
+                return { id: 'campfire', jumlah: 1 };
             }
 
             return null;
@@ -1485,12 +1565,107 @@
                     }
                 }
                 addItem(result.id, result.jumlah);
+
+                // Jika kapak dibuat, aktifkan status kapak
+                if (result.id === 'kapak') {
+                    gameState.punyaKapak = true;
+                    gameState.kapakDurability = gameState.kapakMaxDurability;
+                }
+
                 gameState.pesan = '✅ Berhasil crafting!';
                 playSound('levelup');
                 gameState.craftingTableResult = null;
             } else {
                 gameState.pesan = '❌ Resep tidak valid!';
             }
+        }
+
+        // ===== FUNGSI BARU: tryCraft2x2 =====
+        function tryCraft2x2() {
+            console.log('tryCraft2x2 dipanggil'); // DEBUG
+            const slots = gameState.craftingSlots;
+            const counts = hitungItem(slots);
+            const totalItems = slots.reduce((sum, slot) => sum + (slot ? slot.jumlah : 0), 0);
+            console.log('counts:', counts, 'totalItems:', totalItems); // DEBUG
+
+            // === Resep Ranting: 1 Kayu → 1 Ranting ===
+            if (counts['kayu'] === 1 && totalItems === 1) {
+                for (let i = 0; i < slots.length; i++) {
+                    if (slots[i] && slots[i].id === 'kayu') {
+                        slots[i].jumlah -= 1;
+                        if (slots[i].jumlah <= 0) slots[i] = null;
+                        break;
+                    }
+                }
+                addItem('ranting', 1);
+                gameState.pesan = '🥢 Ranting berhasil dibuat!';
+                playSound('chop');
+                tambahXP(2);
+                return true;
+            }
+
+            // === Resep Meja Kerja: 4 Kayu → 1 Meja Kerja ===
+            if (counts['kayu'] === 4 && totalItems === 4) {
+                for (let i = 0; i < 4; i++) {
+                    if (slots[i] && slots[i].id === 'kayu') {
+                        slots[i].jumlah -= 1;
+                        if (slots[i].jumlah <= 0) slots[i] = null;
+                    }
+                }
+                addItem('crafting_table', 1);
+                gameState.pesan = '🪑 Meja Kerja berhasil dibuat!';
+                playSound('levelup');
+                tambahXP(10);
+                return true;
+            }
+
+            // === Resep Medkit: 1 Kulit + 1 Berry → 1 Medkit ===
+            if (counts['kulit'] === 1 && counts['berry'] === 1 && totalItems === 2) {
+                let consumedKulit = false, consumedBerry = false;
+                for (let i = 0; i < 4; i++) {
+                    if (slots[i]) {
+                        if (slots[i].id === 'kulit' && !consumedKulit) {
+                            slots[i].jumlah -= 1;
+                            consumedKulit = true;
+                        } else if (slots[i].id === 'berry' && !consumedBerry) {
+                            slots[i].jumlah -= 1;
+                            consumedBerry = true;
+                        }
+                        if (slots[i].jumlah <= 0) slots[i] = null;
+                    }
+                }
+                addItem('medkit', 1);
+                gameState.pesan = '💊 Medkit berhasil dibuat!';
+                playSound('levelup');
+                tambahXP(5);
+                return true;
+            }
+
+            // === Resep Campfire: 2 Kayu + 1 Batu → 1 Campfire ===
+            if (counts['kayu'] === 2 && counts['batu'] === 1 && totalItems === 3) {
+                let consumedKayu = 0, consumedBatu = false;
+                for (let i = 0; i < slots.length; i++) {
+                    if (slots[i]) {
+                        if (slots[i].id === 'kayu' && consumedKayu < 2) {
+                            const used = Math.min(slots[i].jumlah, 2 - consumedKayu);
+                            slots[i].jumlah -= used;
+                            consumedKayu += used;
+                        } else if (slots[i].id === 'batu' && !consumedBatu) {
+                            slots[i].jumlah -= 1;
+                            consumedBatu = true;
+                        }
+                        if (slots[i].jumlah <= 0) slots[i] = null;
+                    }
+                }
+                addItem('campfire', 1);
+                gameState.pesan = '🔥 Campfire berhasil dibuat!';
+                playSound('levelup');
+                tambahXP(5);
+                return true;
+            }
+
+            gameState.pesan = '❌ Resep tidak valid!';
+            return false;
         }
 
         // ===== FUNGSI INTERAKSI =====
@@ -1561,7 +1736,13 @@
                 }
             }
             if (musuhTerdekat !== null) {
-                const damage = 10 + (gameState.level - 1) * 5;
+                let damage = 10 + (gameState.level - 1) * 5;
+                // Jika memegang pedang, damage lebih besar
+                if (activeSlot && activeSlot.id === 'pedang_kayu') {
+                    damage = 15 + (gameState.level - 1) * 5;
+                } else if (activeSlot && activeSlot.id === 'pedang_batu') {
+                    damage = 25 + (gameState.level - 1) * 5;
+                }
                 gameState.enemies[musuhTerdekat].hp -= damage;
                 gameState.enemies[musuhTerdekat].shakeUntil = performance.now() + 150;
                 spawnFloatingText(gameState.enemies[musuhTerdekat].x, gameState.enemies[musuhTerdekat].y - 20, '-' + damage, '#FF5555');
@@ -1588,7 +1769,13 @@
             if (kelinciTerdekat !== null) {
                 const kelinci = gameState.kelincis[kelinciTerdekat];
                 playSound('hit');
-                const damage = 10 + (gameState.level - 1) * 5;
+                let damage = 10 + (gameState.level - 1) * 5;
+                // Jika memegang pedang, damage lebih besar
+                if (activeSlot && activeSlot.id === 'pedang_kayu') {
+                    damage = 15 + (gameState.level - 1) * 5;
+                } else if (activeSlot && activeSlot.id === 'pedang_batu') {
+                    damage = 25 + (gameState.level - 1) * 5;
+                }
                 kelinci.hp -= damage;
                 kelinci.shakeUntil = performance.now() + 150;
                 if (kelinci.hp > 0) {
@@ -1654,6 +1841,68 @@
                 }
                 return;
             }
+        }
+        
+        function hancurkanTerdekat() {
+            const player = gameState.player;
+            let terdekat = null;
+            let jenis = null;
+            let jarakTerdekat = 40; // jarak maksimum untuk menghancurkan
+            
+            // Cek campfire
+            for (let i = 0; i < gameState.campfires.length; i++) {
+                const obj = gameState.campfires[i];
+                const jarak = Math.sqrt((player.x - obj.x) ** 2 + (player.y - obj.y) ** 2);
+                if (jarak < jarakTerdekat && isInFront(player, obj.x, obj.y)) {
+                    terdekat = i;
+                    jenis = 'campfire';
+                    jarakTerdekat = jarak;
+                }
+            }
+            
+            // Cek dinding
+            for (let i = 0; i < gameState.walls.length; i++) {
+                const obj = gameState.walls[i];
+                const jarak = Math.sqrt((player.x - obj.x) ** 2 + (player.y - obj.y) ** 2);
+                if (jarak < jarakTerdekat && isInFront(player, obj.x, obj.y)) {
+                    terdekat = i;
+                    jenis = 'dinding';
+                    jarakTerdekat = jarak;
+                }
+            }
+            
+            // Cek crafting table
+            for (let i = 0; i < gameState.craftingTables.length; i++) {
+                const obj = gameState.craftingTables[i];
+                const jarak = Math.sqrt((player.x - obj.x) ** 2 + (player.y - obj.y) ** 2);
+                if (jarak < jarakTerdekat && isInFront(player, obj.x, obj.y)) {
+                    terdekat = i;
+                    jenis = 'crafting_table';
+                    jarakTerdekat = jarak;
+                }
+            }
+            
+            if (jenis === null) {
+                gameState.pesan = '❌ Tidak ada bangunan di depanmu!';
+                return;
+            }
+            
+            // Hapus objek dan kembalikan item ke inventory
+            if (jenis === 'campfire') {
+                gameState.campfires.splice(terdekat, 1);
+                addItem('campfire', 1);
+                gameState.pesan = '🔥 Campfire dihancurkan, +1 Campfire';
+            } else if (jenis === 'dinding') {
+                gameState.walls.splice(terdekat, 1);
+                addItem('dinding', 1);
+                gameState.pesan = '🧱 Dinding dihancurkan, +1 Dinding';
+            } else if (jenis === 'crafting_table') {
+                gameState.craftingTables.splice(terdekat, 1);
+                addItem('crafting_table', 1);
+                gameState.pesan = '🪑 Meja Kerja dihancurkan, +1 Meja Kerja';
+            }
+            
+            playSound('chop');
         }
 
         // ===== ITEM SPECIFIC FUNCTIONS (SUDAH DIISI) =====
@@ -1847,6 +2096,9 @@
                 }
             }
             if (e.key === 'k' || e.key === 'K') toggleMusic();
+            if (e.key === 'h' || e.key === 'H') {
+                hancurkanTerdekat();
+            }
             if (e.key >= '1' && e.key <= '8') {
                 gameState.selectedSlot = parseInt(e.key) - 1;
             }
@@ -1891,22 +2143,12 @@
                     }
                 }
 
+                // === PERUBAHAN: Gunakan tryCraft2x2 ===
                 if (!gameState.craftingTableOpen && gameState.craftBtn) {
                     const btn = gameState.craftBtn;
                     if (x >= btn.x && x <= btn.x + btn.w && y >= btn.y && y <= btn.y + btn.h) {
-                        const slots = gameState.craftingSlots;
-                        if (slots.every(s => s && s.id === 'kayu' && s.jumlah >= 1)) {
-                            for (let i = 0; i < 4; i++) {
-                                slots[i].jumlah -= 1;
-                                if (slots[i].jumlah <= 0) slots[i] = null;
-                            }
-                            addItem('crafting_table', 1);
-                            gameState.pesan = '🪑 Meja Kerja berhasil dibuat!';
-                            playSound('levelup');
-                            tambahXP(10);
-                        } else {
-                            gameState.pesan = '❌ Butuh 4 Kayu di 4 slot!';
-                        }
+                        console.log('Klik Craft 2x2 di', x, y); // DEBUG
+                        tryCraft2x2();
                         return;
                     }
                 }
@@ -2035,22 +2277,12 @@
                             continue;
                         }
                     }
+                    // === PERUBAHAN: Gunakan tryCraft2x2 ===
                     if (!gameState.craftingTableOpen && gameState.craftBtn) {
                         const btn = gameState.craftBtn;
                         if (x >= btn.x && x <= btn.x + btn.w && y >= btn.y && y <= btn.y + btn.h) {
-                            const slots = gameState.craftingSlots;
-                            if (slots.every(s => s && s.id === 'kayu' && s.jumlah >= 1)) {
-                                for (let i = 0; i < 4; i++) {
-                                    slots[i].jumlah -= 1;
-                                    if (slots[i].jumlah <= 0) slots[i] = null;
-                                }
-                                addItem('crafting_table', 1);
-                                gameState.pesan = '🪑 Meja Kerja berhasil dibuat!';
-                                playSound('levelup');
-                                tambahXP(10);
-                            } else {
-                                gameState.pesan = '❌ Butuh 4 Kayu di 4 slot!';
-                            }
+                            console.log('Touch Craft 2x2 di', x, y); // DEBUG
+                            tryCraft2x2();
                             continue;
                         }
                     }
@@ -2097,6 +2329,7 @@
                 const startBtnX = screenW - buttonRadius - 20;
                 const btn1Y = screenH - buttonRadius - 20;
                 const btn2Y = btn1Y - 80;
+                const btn3Y = btn2Y - 80;   // ← tambahan untuk tombol hancurkan
                 
                 const dInteraksi = Math.hypot(x - startBtnX, y - btn1Y);
                 if (dInteraksi <= buttonRadius * 1.5) { interaksi(); continue; }
@@ -2108,6 +2341,12 @@
                     } else {
                         gameState.showMenu = true;
                     }
+                    continue; 
+                }
+                
+                const dDestroy = Math.hypot(x - startBtnX, y - btn3Y);
+                if (dDestroy <= buttonRadius * 1.5) { 
+                    hancurkanTerdekat(); 
                     continue; 
                 }
                 
